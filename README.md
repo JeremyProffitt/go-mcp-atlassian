@@ -173,19 +173,41 @@ Edit `%APPDATA%\Claude\claude_desktop_config.json`:
 Edit `~/.continue/config.yaml`:
 
 ```yaml
-experimental:
-  modelContextProtocolServers:
-    - transport:
-        type: stdio
-        command: /path/to/go-mcp-atlassian
-        env:
-          JIRA_URL: https://your-company.atlassian.net
-          JIRA_USERNAME: your.email@company.com
-          JIRA_API_TOKEN: your_jira_api_token
-          CONFLUENCE_URL: https://your-company.atlassian.net/wiki
-          CONFLUENCE_USERNAME: your.email@company.com
-          CONFLUENCE_API_TOKEN: your_confluence_api_token
+mcpServers:
+  - name: Atlassian
+    type: stdio
+    command: /path/to/go-mcp-atlassian
+    env:
+      JIRA_URL: https://your-company.atlassian.net
+      JIRA_USERNAME: your.email@company.com
+      JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+      CONFLUENCE_URL: https://your-company.atlassian.net/wiki
+      CONFLUENCE_USERNAME: your.email@company.com
+      CONFLUENCE_API_TOKEN: ${{ secrets.CONFLUENCE_API_TOKEN }}
 ```
+
+#### Continue.dev Standalone MCP Server File
+
+Create `~/.continue/mcpServers/atlassian.yaml`:
+
+```yaml
+name: Atlassian MCP Server
+version: 0.0.1
+schema: v1
+mcpServers:
+  - name: Atlassian
+    type: stdio
+    command: /path/to/go-mcp-atlassian
+    env:
+      JIRA_URL: https://your-company.atlassian.net
+      JIRA_USERNAME: your.email@company.com
+      JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+      CONFLUENCE_URL: https://your-company.atlassian.net/wiki
+      CONFLUENCE_USERNAME: your.email@company.com
+      CONFLUENCE_API_TOKEN: ${{ secrets.CONFLUENCE_API_TOKEN }}
+```
+
+> **Note**: MCP servers in Continue.dev can only be used in Agent mode. Use `${{ secrets.VAR_NAME }}` syntax to reference secrets stored in Continue's secrets management.
 
 #### Docker Compose Configuration
 
@@ -240,18 +262,20 @@ stringData:
 
 | Tool | Description | Type |
 |------|-------------|------|
+| `jira_get_user_profile` | Get user profile information | Read |
 | `jira_get_issue` | Get issue details | Read |
 | `jira_search` | Search issues using JQL | Read |
-| `jira_get_user_profile` | Get user profile information | Read |
 | `jira_search_fields` | Search Jira fields | Read |
 | `jira_get_project_issues` | Get issues for a project | Read |
 | `jira_get_transitions` | Get available status transitions | Read |
 | `jira_get_worklog` | Get worklog entries | Read |
+| `jira_download_attachments` | Get attachment info and URLs | Read |
 | `jira_get_agile_boards` | Get agile boards | Read |
 | `jira_get_board_issues` | Get issues for a board | Read |
 | `jira_get_sprints_from_board` | Get sprints from a board | Read |
 | `jira_get_sprint_issues` | Get issues in a sprint | Read |
 | `jira_get_link_types` | Get issue link types | Read |
+| `jira_batch_get_changelogs` | Get changelogs for issues | Read |
 | `jira_get_project_versions` | Get project fix versions | Read |
 | `jira_get_all_projects` | Get all accessible projects | Read |
 | `jira_create_issue` | Create a new issue | Write |
@@ -263,11 +287,7 @@ stringData:
 | `jira_add_worklog` | Add worklog entry | Write |
 | `jira_link_to_epic` | Link issue to an epic | Write |
 | `jira_create_issue_link` | Create link between issues | Write |
-| `jira_remove_issue_link` | Remove issue link | Write |
 | `jira_transition_issue` | Transition issue status | Write |
-| `jira_create_sprint` | Create a new sprint | Write |
-| `jira_update_sprint` | Update sprint details | Write |
-| `jira_create_version` | Create project version | Write |
 
 ### Confluence Tools
 
