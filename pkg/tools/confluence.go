@@ -100,6 +100,9 @@ func (r *Registry) registerConfluenceSearch(server *mcp.Server) {
 				cql = fmt.Sprintf("(%s) AND %s", query, spaceFilter)
 			}
 
+			// Log the query if query logging is enabled
+			r.logger.LogQuery("confluence_search", cql, args)
+
 			ctx := context.Background()
 			results, err := r.confluenceClient.Search(ctx, cql, &confluence.SearchOptions{
 				Limit: limit,
@@ -238,6 +241,10 @@ func (r *Registry) registerConfluenceGetPage(server *mcp.Server) {
 					}
 				}
 			} else {
+				// Log the lookup query if query logging is enabled
+				lookupQuery := fmt.Sprintf("space=%s title=%s type=page", spaceKey, title)
+				r.logger.LogQuery("confluence_get_page_by_title", lookupQuery, args)
+
 				// Use v1 API to get content by space and title
 				content, err := r.confluenceClient.GetContentBySpaceAndTitle(ctx, spaceKey, title, "page", []string{"body.storage", "version", "space"})
 				if err != nil {
@@ -901,6 +908,10 @@ func (r *Registry) registerConfluenceSearchUser(server *mcp.Server) {
 			ctx := context.Background()
 			// Build CQL for user search
 			cql := fmt.Sprintf("user.fullname ~ \"%s\" OR user.email ~ \"%s\"", query, query)
+
+			// Log the query if query logging is enabled
+			r.logger.LogQuery("confluence_search_user", cql, args)
+
 			users, err := r.confluenceClient.SearchUsers(ctx, cql, 0, limit, nil)
 			if err != nil {
 				r.logger.Error("confluence_search_user failed: %v", err)

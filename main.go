@@ -59,6 +59,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "  CONFLUENCE_API_TOKEN Confluence API token (for Cloud)\n")
 		fmt.Fprintf(os.Stderr, "  CONFLUENCE_PERSONAL_TOKEN Confluence Personal Access Token (for Server/DC)\n")
 		fmt.Fprintf(os.Stderr, "  READ_ONLY_MODE       Enable read-only mode (true/false)\n")
+		fmt.Fprintf(os.Stderr, "  MCP_LOG_QUERIES      Log all queries to queries/ subfolder (true/false, default: false)\n")
 	}
 
 	flag.Parse()
@@ -77,6 +78,12 @@ func main() {
 	readOnlyMode := false
 	if v := os.Getenv("READ_ONLY_MODE"); v != "" {
 		readOnlyMode, _ = strconv.ParseBool(v)
+	}
+
+	// Read MCP_LOG_QUERIES environment variable (off by default)
+	logQueries := false
+	if v := os.Getenv("MCP_LOG_QUERIES"); v != "" {
+		logQueries, _ = strconv.ParseBool(v)
 	}
 
 	// Validate that at least one client can be configured
@@ -124,9 +131,10 @@ func main() {
 
 	// Initialize logger
 	loggerConfig := logging.Config{
-		LogDir:  actualLogDir,
-		AppName: "go-mcp-atlassian",
-		Level:   logging.ParseLevel(*logLevel),
+		LogDir:     actualLogDir,
+		AppName:    "go-mcp-atlassian",
+		Level:      logging.ParseLevel(*logLevel),
+		LogQueries: logQueries,
 	}
 
 	logger, err := logging.NewLogger(loggerConfig)

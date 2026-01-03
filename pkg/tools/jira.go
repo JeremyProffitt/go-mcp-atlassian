@@ -219,6 +219,9 @@ func (r *JiraRegistry) registerSearch(server *mcp.Server) {
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer cancel()
 
+		// Log the JQL query if query logging is enabled
+		r.logger.LogQuery("jira_search", jql, args)
+
 		opts := &jira.SearchOptions{
 			Fields:     fields,
 			StartAt:    startAt,
@@ -378,6 +381,9 @@ func (r *JiraRegistry) registerGetProjectIssues(server *mcp.Server) {
 			}
 		}
 		jql := strings.Join(jqlParts, " AND ") + " ORDER BY created DESC"
+
+		// Log the JQL query if query logging is enabled
+		r.logger.LogQuery("jira_get_project_issues", jql, args)
 
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer cancel()
@@ -657,6 +663,9 @@ func (r *JiraRegistry) registerGetBoardIssues(server *mcp.Server) {
 		}
 		jql += " ORDER BY created DESC"
 
+		// Log the JQL query if query logging is enabled
+		r.logger.LogQuery("jira_get_board_issues", jql, args)
+
 		opts := &jira.SearchOptions{
 			StartAt:    startAt,
 			MaxResults: maxResults,
@@ -782,6 +791,10 @@ func (r *JiraRegistry) registerGetSprintIssues(server *mcp.Server) {
 
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer cancel()
+
+		// Log the JQL query if query logging is enabled (even if empty, log the sprint context)
+		queryInfo := fmt.Sprintf("sprint=%d jql=%s", sprintID, jql)
+		r.logger.LogQuery("jira_get_sprint_issues", queryInfo, args)
 
 		issues, err := r.jiraClient.GetSprintIssues(ctx, sprintID, jql, startAt, maxResults)
 		if err != nil {

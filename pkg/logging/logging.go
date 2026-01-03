@@ -81,20 +81,23 @@ type ConfigValue struct {
 
 // Logger handles structured logging to file
 type Logger struct {
-	mu        sync.Mutex
-	level     LogLevel
-	logger    *log.Logger
-	file      *os.File
-	logDir    string
-	appName   string
-	startTime time.Time
+	mu           sync.Mutex
+	level        LogLevel
+	logger       *log.Logger
+	file         *os.File
+	logDir       string
+	appName      string
+	startTime    time.Time
+	logQueries   bool
+	queryLogDir  string
 }
 
 // Config holds logger configuration
 type Config struct {
-	LogDir  string
-	AppName string
-	Level   LogLevel
+	LogDir     string
+	AppName    string
+	Level      LogLevel
+	LogQueries bool // Enable query logging to queries subfolder
 }
 
 var (
@@ -144,13 +147,18 @@ func NewLogger(cfg Config) (*Logger, error) {
 		return nil, fmt.Errorf("failed to open log file %s: %w", logPath, err)
 	}
 
+	// Set up query log directory if query logging is enabled
+	queryLogDir := filepath.Join(logDir, "queries")
+
 	l := &Logger{
-		level:     cfg.Level,
-		logger:    log.New(file, "", 0),
-		file:      file,
-		logDir:    logDir,
-		appName:   cfg.AppName,
-		startTime: time.Now(),
+		level:       cfg.Level,
+		logger:      log.New(file, "", 0),
+		file:        file,
+		logDir:      logDir,
+		appName:     cfg.AppName,
+		startTime:   time.Now(),
+		logQueries:  cfg.LogQueries,
+		queryLogDir: queryLogDir,
 	}
 
 	return l, nil
@@ -234,6 +242,90 @@ func (l *Logger) ToolCall(toolName string, args map[string]interface{}, duration
 		argKeys = append(argKeys, k)
 	}
 	l.Info("TOOL_CALL tool=%q args=%v duration=%s success=%v", toolName, argKeys, duration, success)
+}
+
+// LogQuery logs a query to the queries subfolder when query logging is enabled.
+// Queries are stored in: {log_dir}/queries/YYYYMMDD/{descriptive_name}.YYYYMMDD.HHmmss.query
+// The queryType should be a short descriptive name like "jira_search", "confluence_search", etc.
+// The query parameter contains the actual query content (JQL, CQL, etc.).
+// The args parameter contains the full arguments map for additional context.
+func (l *Logger) LogQuery(queryType string, query string, args map[string]interface{}) {
+	if l == nil || !l.logQueries {
+		return
+	}
+
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	now := time.Now()
+	dateDir := now.Format("20060102")
+	timestamp := now.Format("20060102.150405")
+
+	// Create date-specific directory: {log_dir}/queries/YYYYMMDD/
+	queryDirPath := filepath.Join(l.queryLogDir, dateDir)
+	if err := os.MkdirAll(queryDirPath, 0755); err != nil {
+		// Log error but don't fail - query logging is optional
+		l.logger.Printf("[%s] [ERROR] Failed to create query log directory %s: %v",
+			now.Format("2006-01-02T15:04:05.000Z07:00"), queryDirPath, err)
+		return
+	}
+
+	// Sanitize queryType to create a safe filename
+	safeName := sanitizeFileName(queryType)
+
+	// Build filename: {descriptive_name}.YYYYMMDD.HHmmss.query
+	fileName := fmt.Sprintf("%s.%s.query", safeName, timestamp)
+	filePath := filepath.Join(queryDirPath, fileName)
+
+	// Build query log content
+	var content strings.Builder
+	content.WriteString(fmt.Sprintf("# Query Log: %s\n", queryType))
+	content.WriteString(fmt.Sprintf("# Timestamp: %s\n", now.Format(time.RFC3339)))
+	content.WriteString(fmt.Sprintf("# Type: %s\n", queryType))
+	content.WriteString("# ----------------------------------------\n\n")
+	content.WriteString("## Query:\n")
+	content.WriteString(query)
+	content.WriteString("\n\n")
+
+	// Add arguments if present
+	if len(args) > 0 {
+		content.WriteString("## Arguments:\n")
+		for k, v := range args {
+			content.WriteString(fmt.Sprintf("  %s: %v\n", k, v))
+		}
+	}
+
+	// Write to file
+	if err := os.WriteFile(filePath, []byte(content.String()), 0644); err != nil {
+		l.logger.Printf("[%s] [ERROR] Failed to write query log %s: %v",
+			now.Format("2006-01-02T15:04:05.000Z07:00"), filePath, err)
+		return
+	}
+
+	l.Debug("QUERY_LOGGED type=%s file=%s", queryType, filePath)
+}
+
+// IsQueryLoggingEnabled returns whether query logging is enabled
+func (l *Logger) IsQueryLoggingEnabled() bool {
+	if l == nil {
+		return false
+	}
+	return l.logQueries
+}
+
+// sanitizeFileName removes or replaces characters that are unsafe for filenames
+func sanitizeFileName(name string) string {
+	// Replace unsafe characters with underscores
+	unsafe := []string{"/", "\\", ":", "*", "?", "\"", "<", ">", "|", " "}
+	result := name
+	for _, char := range unsafe {
+		result = strings.ReplaceAll(result, char, "_")
+	}
+	// Limit length to reasonable filename size
+	if len(result) > 50 {
+		result = result[:50]
+	}
+	return result
 }
 
 // AuthToken logs authentication token operations (no secrets)

@@ -59,6 +59,7 @@ Add to your Claude Desktop, Cursor, or other MCP-compatible client configuration
 | `READ_ONLY_MODE` | Disable write operations (default: `false`) | No |
 | `MCP_LOG_DIR` | Log directory path | No |
 | `MCP_LOG_LEVEL` | Log level: `off`, `error`, `warn`, `info`, `debug` | No |
+| `MCP_LOG_QUERIES` | Log all queries to `queries/` subfolder (default: `false`) | No |
 
 ### JSON Configuration Examples
 
@@ -412,6 +413,34 @@ Enable debug logging for troubleshooting:
 ```
 
 Logs are written to `{MCP_LOG_DIR}/go-mcp-atlassian-{date}.log`
+
+### Query Logging
+
+Enable query logging to capture all Jira and Confluence queries for debugging or auditing:
+
+```json
+{
+  "mcpServers": {
+    "atlassian": {
+      "command": "/path/to/go-mcp-atlassian",
+      "env": {
+        "MCP_LOG_QUERIES": "true",
+        "MCP_LOG_DIR": "/path/to/logs"
+      }
+    }
+  }
+}
+```
+
+When enabled, queries are saved to: `{MCP_LOG_DIR}/queries/YYYYMMDD/{query_type}.YYYYMMDD.HHmmss.query`
+
+Query files include:
+- The query type (e.g., `jira_search`, `confluence_search`)
+- Timestamp
+- The actual query (JQL, CQL, etc.)
+- All tool arguments
+
+This feature is **off by default** and should only be enabled when needed for debugging or compliance purposes.
 
 ## Contributing
 
