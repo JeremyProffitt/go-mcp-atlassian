@@ -1,0 +1,150 @@
+name: Build and Release
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    name: Test
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        go-version: ['1.21', '1.22']
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go-version }}
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Run tests
+        shell: bash
+        run: go test -v -race ./...
+
+  build:
+    name: Build
+    needs: test
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Build for all platforms
+        run: |
+          mkdir -p dist
+
+          # Darwin (macOS) - build both architectures then create universal binary
+          GOOS=darwin GOARCH=amd64 go build -ldflags="-s -w" -o dist/go-mcp-atlassian-darwin-amd64 .
+          GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w" -o dist/go-mcp-atlassian-darwin-arm64 .
+
+          # Create universal binary using lipo
+          lipo -create -output dist/go-mcp-atlassian-darwin-universal \
+            dist/go-mcp-atlassian-darwin-amd64 \
+            dist/go-mcp-atlassian-darwin-arm64
+
+          # Remove individual architecture binaries
+          rm dist/go-mcp-atlassian-darwin-amd64 dist/go-mcp-atlassian-darwin-arm64
+
+          # Linux
+          GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o dist/go-mcp-atlassian-linux-amd64 .
+          GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o dist/go-mcp-atlassian-linux-arm64 .
+
+          # Windows
+          GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o dist/go-mcp-atlassian-windows-amd64.exe .
+
+      - name: Generate checksums
+        run: |
+          cd dist
+          shasum -a 256 * > checksums.txt
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: binaries
+          path: dist/
+
+  release:
+    name: Release
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: binaries
+          path: dist/
+
+      - name: Delete existing release
+        run: |
+          gh release delete latest --yes --cleanup-tag || true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: latest
+          name: Latest Build
+          body: |
+            Automated build from main branch.
+
+            ## go-mcp-atlassian
+
+            A Go implementation of the Atlassian MCP Server - enabling LLMs to interact with Atlassian products (Jira, Confluence) for project management and collaboration.
+
+            ## Downloads
+
+            | Platform | Architecture | File |
+            |----------|--------------|------|
+            | macOS | Universal (Intel + Apple Silicon) | go-mcp-atlassian-darwin-universal |
+            | Linux | x64 | go-mcp-atlassian-linux-amd64 |
+            | Linux | ARM64 | go-mcp-atlassian-linux-arm64 |
+            | Windows | x64 | go-mcp-atlassian-windows-amd64.exe |
+
+            ## Installation
+
+            1. Download the appropriate binary for your platform
+            2. Make it executable (macOS/Linux): `chmod +x go-mcp-atlassian-*`
+            3. Configure environment variables (see README)
+            4. Add to your Claude Desktop config or run directly
+
+            ## Verification
+
+            Use the checksums.txt file to verify your download:
+            ```bash
+            shasum -a 256 -c checksums.txt
+            ```
+          draft: false
+          prerelease: false
+          files: |
+            dist/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
