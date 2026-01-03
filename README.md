@@ -26,13 +26,55 @@ Download the latest binary for your platform from the [Releases](https://github.
 
 ### 2. Get Your API Token
 
-**For Atlassian Cloud:**
-- Go to https://id.atlassian.com/manage-profile/security/api-tokens
-- Create and copy your API token
+Choose the instructions based on your deployment type:
 
-**For Server/Data Center:**
-- Go to your profile settings → Personal Access Tokens
-- Create and copy your Personal Access Token (PAT)
+#### Atlassian Cloud (API Token)
+
+For Cloud deployments, you need an API token. The same token works for both Jira and Confluence.
+
+1. Log in to your Atlassian account at https://id.atlassian.com
+2. Navigate to **Security** in the left sidebar, or go directly to https://id.atlassian.com/manage-profile/security/api-tokens
+3. Click **Create API token**
+4. Enter a descriptive label (e.g., "MCP Server Token")
+5. Click **Create**
+6. Click **Copy** to copy the token to your clipboard
+7. Store the token securely - you won't be able to see it again
+
+> **Note**: Use your Atlassian account email as the username and this API token as the password in your configuration.
+
+#### Jira Server/Data Center (Personal Access Token)
+
+For self-hosted Jira, you need a Personal Access Token (PAT).
+
+1. Log in to your Jira Server/Data Center instance
+2. Click your profile avatar in the top-right corner
+3. Select **Profile** from the dropdown
+4. Click **Personal Access Tokens** in the left sidebar
+5. Click **Create token**
+6. Enter a descriptive name (e.g., "MCP Server Token")
+7. Optionally set an expiration date (recommended for security)
+8. Click **Create**
+9. Copy the token immediately - it will only be shown once
+10. Store the token securely
+
+> **Note**: PATs require Jira Server/Data Center version 8.14 or later.
+
+#### Confluence Server/Data Center (Personal Access Token)
+
+For self-hosted Confluence, you need a Personal Access Token (PAT).
+
+1. Log in to your Confluence Server/Data Center instance
+2. Click your profile avatar in the top-right corner
+3. Select **Settings** (or **Profile**)
+4. Click **Personal Access Tokens** in the left sidebar
+5. Click **Create token**
+6. Enter a descriptive name (e.g., "MCP Server Token")
+7. Optionally set an expiration date (recommended for security)
+8. Click **Create**
+9. Copy the token immediately - it will only be shown once
+10. Store the token securely
+
+> **Note**: PATs require Confluence Server/Data Center version 7.9 or later.
 
 ### 3. Configure Your IDE
 
