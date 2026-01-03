@@ -1,0 +1,1 @@
+# go-mcop-atlassian
