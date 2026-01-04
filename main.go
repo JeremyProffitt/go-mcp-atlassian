@@ -134,15 +134,21 @@ func main() {
 		addAppSubfolder = true // User specified a shared log directory
 	}
 
+	// Resolve log level (flag > env var > default)
+	actualLogLevel := *logLevel
 	if *logLevel != "info" {
+		// Non-default flag value means flag was explicitly set
 		logLevelSource = logging.SourceFlag
+	} else if envVal := os.Getenv("MCP_LOG_LEVEL"); envVal != "" {
+		actualLogLevel = envVal
+		logLevelSource = logging.SourceEnvironment
 	}
 
 	// Initialize logger
 	loggerConfig := logging.Config{
 		LogDir:          actualLogDir,
 		AppName:         "go-mcp-atlassian",
-		Level:           logging.ParseLevel(*logLevel),
+		Level:           logging.ParseLevel(actualLogLevel),
 		LogQueries:      logQueries,
 		AddAppSubfolder: addAppSubfolder,
 	}
@@ -171,7 +177,7 @@ func main() {
 	startupInfo := logging.GetStartupInfo(
 		Version,
 		logging.ConfigValue{Value: actualLogDir, Source: logDirSource},
-		logging.ConfigValue{Value: *logLevel, Source: logLevelSource},
+		logging.ConfigValue{Value: actualLogLevel, Source: logLevelSource},
 		logging.ConfigValue{Value: atlassianURL, Source: atlassianURLSource},
 	)
 	logger.LogStartup(startupInfo)
