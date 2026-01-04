@@ -84,11 +84,8 @@ func main() {
 		readOnlyMode, _ = strconv.ParseBool(v)
 	}
 
-	// Read MCP_LOG_QUERIES environment variable (off by default)
-	logQueries := false
-	if v := os.Getenv("MCP_LOG_QUERIES"); v != "" {
-		logQueries, _ = strconv.ParseBool(v)
-	}
+	// Query logging (off by default, set MCP_LOG_QUERIES=1 to enable)
+	logQueries := os.Getenv("MCP_LOG_QUERIES") == "1"
 
 	// Validate that at least one client can be configured
 	var jiraClient *jira.Client
