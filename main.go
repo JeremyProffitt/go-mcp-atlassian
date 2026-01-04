@@ -87,34 +87,8 @@ func main() {
 	// Query logging (off by default, set MCP_LOG_QUERIES=1 to enable)
 	logQueries := os.Getenv("MCP_LOG_QUERIES") == "1"
 
-	// Validate that at least one client can be configured
-	var jiraClient *jira.Client
-	var confluenceClient *confluence.Client
-	var err error
-
-	if jiraConfig.URL != "" {
-		jiraClient, err = jira.NewClient(jiraConfig)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error creating Jira client: %v\n", err)
-			os.Exit(1)
-		}
-	}
-
-	if confluenceConfig.URL != "" {
-		confluenceClient, err = confluence.NewClient(confluenceConfig)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error creating Confluence client: %v\n", err)
-			os.Exit(1)
-		}
-	}
-
-	// At least one client must be configured
-	if jiraClient == nil && confluenceClient == nil {
-		fmt.Fprintf(os.Stderr, "Error: At least one of JIRA_URL or CONFLUENCE_URL must be configured\n")
-		os.Exit(1)
-	}
-
 	// Determine log directory and level sources for startup info
+	// NOTE: Logger must be initialized BEFORE creating clients so API calls are logged
 	logDirSource := logging.SourceDefault
 	logLevelSource := logging.SourceDefault
 	atlassianURLSource := logging.SourceEnvironment
@@ -159,6 +133,32 @@ func main() {
 		os.Exit(1)
 	}
 	defer logger.Close()
+
+	// Create API clients AFTER logger is initialized so API calls are logged
+	var jiraClient *jira.Client
+	var confluenceClient *confluence.Client
+
+	if jiraConfig.URL != "" {
+		jiraClient, err = jira.NewClient(jiraConfig, atlassian.WithLogger(logger))
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error creating Jira client: %v\n", err)
+			os.Exit(1)
+		}
+	}
+
+	if confluenceConfig.URL != "" {
+		confluenceClient, err = confluence.NewClient(confluenceConfig, atlassian.WithLogger(logger))
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error creating Confluence client: %v\n", err)
+			os.Exit(1)
+		}
+	}
+
+	// At least one client must be configured
+	if jiraClient == nil && confluenceClient == nil {
+		fmt.Fprintf(os.Stderr, "Error: At least one of JIRA_URL or CONFLUENCE_URL must be configured\n")
+		os.Exit(1)
+	}
 
 	// Determine the Atlassian URL for logging
 	atlassianURL := ""
