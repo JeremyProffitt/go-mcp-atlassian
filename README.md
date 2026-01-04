@@ -496,7 +496,15 @@ Enable debug logging for troubleshooting:
 }
 ```
 
-Logs are written to `{MCP_LOG_DIR}/go-mcp-atlassian-{date}.log`
+When `MCP_LOG_DIR` is set or `-log-dir` flag is used, logs are automatically placed in a subfolder named after the binary. This allows multiple MCP servers to share the same log directory:
+
+```
+MCP_LOG_DIR=/var/log/mcp
+  └── go-mcp-atlassian/
+      └── go-mcp-atlassian-2026-01-04.log
+```
+
+Logs are written to `{MCP_LOG_DIR}/go-mcp-atlassian/go-mcp-atlassian-{date}.log`
 
 ### Query Logging
 
