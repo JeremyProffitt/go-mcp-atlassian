@@ -109,8 +109,10 @@ func (c *Client) doRequest(ctx context.Context, method, path string, body interf
 
 	// Prepare request body
 	var bodyReader io.Reader
+	var jsonBody []byte
 	if body != nil {
-		jsonBody, err := json.Marshal(body)
+		var err error
+		jsonBody, err = json.Marshal(body)
 		if err != nil {
 			return fmt.Errorf("failed to marshal request body: %w", err)
 		}
@@ -127,6 +129,9 @@ func (c *Client) doRequest(ctx context.Context, method, path string, body interf
 	req.Header.Set("Authorization", c.authHeader)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
+
+	// Log request at DEBUG level
+	c.logRequest(method, fullURL, req.Header, jsonBody)
 
 	// Execute request
 	resp, err := c.httpClient.Do(req)
@@ -149,6 +154,9 @@ func (c *Client) doRequest(ctx context.Context, method, path string, body interf
 		}
 		return fmt.Errorf("failed to read response body: %w", err)
 	}
+
+	// Log response at DEBUG level
+	c.logResponse(resp.StatusCode, duration, resp.Header, respBody)
 
 	// Log the request
 	if c.logger != nil {
@@ -248,6 +256,9 @@ func (c *Client) DoRaw(ctx context.Context, method, path string, body io.Reader,
 		req.Header.Set("Content-Type", contentType)
 	}
 
+	// Log request at DEBUG level (no body for raw requests as it may be binary)
+	c.logRequest(method, fullURL, req.Header, nil)
+
 	// Execute request
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -269,6 +280,9 @@ func (c *Client) DoRaw(ctx context.Context, method, path string, body io.Reader,
 		}
 		return nil, fmt.Errorf("failed to read response body: %w", err)
 	}
+
+	// Log response at DEBUG level
+	c.logResponse(resp.StatusCode, duration, resp.Header, respBody)
 
 	// Log the request
 	if c.logger != nil {
@@ -320,6 +334,9 @@ func (c *Client) UploadFile(ctx context.Context, path string, filename string, c
 	req.Header.Set("Content-Type", contentType)
 	req.Header.Set("X-Atlassian-Token", "no-check") // Required for file uploads
 
+	// Log request at DEBUG level (no body for file uploads)
+	c.logRequest(http.MethodPost, fullURL, req.Header, nil)
+
 	// Execute request
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -341,6 +358,9 @@ func (c *Client) UploadFile(ctx context.Context, path string, filename string, c
 		}
 		return nil, fmt.Errorf("failed to read response body: %w", err)
 	}
+
+	// Log response at DEBUG level
+	c.logResponse(resp.StatusCode, duration, resp.Header, respBody)
 
 	// Log the request
 	if c.logger != nil {
@@ -371,4 +391,88 @@ func (c *Client) UploadFile(ctx context.Context, path string, filename string, c
 	}
 
 	return respBody, nil
+}
+
+// logRequest logs HTTP request details at DEBUG level with redacted sensitive headers.
+func (c *Client) logRequest(method, url string, headers http.Header, body []byte) {
+	if c.logger == nil {
+		return
+	}
+
+	// Build redacted headers map
+	redactedHeaders := make(map[string]string)
+	sensitiveHeaders := []string{"authorization", "x-api-key", "api-key", "token", "secret", "password", "credential", "cookie"}
+
+	for key, values := range headers {
+		if len(values) == 0 {
+			continue
+		}
+		value := values[0]
+		lowerKey := strings.ToLower(key)
+
+		// Check if this is a sensitive header
+		isSensitive := false
+		for _, sensitive := range sensitiveHeaders {
+			if strings.Contains(lowerKey, sensitive) {
+				isSensitive = true
+				break
+			}
+		}
+
+		if isSensitive {
+			redactedHeaders[key] = logging.MaskSecret(value)
+		} else {
+			redactedHeaders[key] = value
+		}
+	}
+
+	// Format headers for logging
+	headerParts := make([]string, 0, len(redactedHeaders))
+	for k, v := range redactedHeaders {
+		headerParts = append(headerParts, fmt.Sprintf("%s=%q", k, v))
+	}
+	headersStr := "{" + strings.Join(headerParts, ", ") + "}"
+
+	// Format body summary (truncated if large)
+	bodySummary := ""
+	if len(body) > 0 {
+		bodyStr := string(body)
+		if len(bodyStr) > 500 {
+			bodySummary = fmt.Sprintf(" body=%q...[truncated, total %d bytes]", bodyStr[:500], len(body))
+		} else {
+			bodySummary = fmt.Sprintf(" body=%q", bodyStr)
+		}
+	}
+
+	c.logger.Debug("API_REQUEST_DETAIL method=%s url=%q headers=%s%s", method, url, headersStr, bodySummary)
+}
+
+// logResponse logs HTTP response details at DEBUG level.
+func (c *Client) logResponse(statusCode int, duration time.Duration, headers http.Header, body []byte) {
+	if c.logger == nil {
+		return
+	}
+
+	// Format response headers (selected ones for debugging)
+	selectedHeaders := []string{"content-type", "content-length", "x-request-id", "x-trace-id"}
+	headerParts := make([]string, 0)
+	for _, key := range selectedHeaders {
+		if values := headers.Get(key); values != "" {
+			headerParts = append(headerParts, fmt.Sprintf("%s=%q", key, values))
+		}
+	}
+	headersStr := "{" + strings.Join(headerParts, ", ") + "}"
+
+	// Format body summary (truncated if large)
+	bodySummary := ""
+	if len(body) > 0 {
+		bodyStr := string(body)
+		if len(bodyStr) > 1000 {
+			bodySummary = fmt.Sprintf(" body=%q...[truncated, total %d bytes]", bodyStr[:1000], len(body))
+		} else {
+			bodySummary = fmt.Sprintf(" body=%q", bodyStr)
+		}
+	}
+
+	c.logger.Debug("API_RESPONSE_DETAIL status=%d duration=%s headers=%s%s", statusCode, duration, headersStr, bodySummary)
 }
