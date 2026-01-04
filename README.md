@@ -2,7 +2,7 @@
 
 [![Go Version](https://img.shields.io/badge/Go-1.21+-00ADD8?style=flat&logo=go)](https://go.dev/)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Build Status](https://github.com/nicholasgriffintn/go-mcp-atlassian/actions/workflows/ci.yml/badge.svg)](https://github.com/nicholasgriffintn/go-mcp-atlassian/actions/workflows/ci.yml)
+[![Build Status](https://github.com/JeremyProffitt/go-mcp-atlassian/actions/workflows/ci.yml/badge.svg)](https://github.com/JeremyProffitt/go-mcp-atlassian/actions/workflows/ci.yml)
 
 A Go implementation of the Model Context Protocol (MCP) server for Atlassian products (Confluence and Jira). Supports both Cloud and Server/Data Center deployments.
 
@@ -22,7 +22,7 @@ This is a Go port of [mcp-atlassian](https://github.com/sooperset/mcp-atlassian)
 
 ### 1. Download
 
-Download the latest binary for your platform from the [Releases](https://github.com/nicholasgriffintn/go-mcp-atlassian/releases) page.
+Download the latest binary for your platform from the [Releases](https://github.com/JeremyProffitt/go-mcp-atlassian/releases) page.
 
 ### 2. Get Your API Token
 
@@ -390,7 +390,7 @@ Options:
 
 ```bash
 # Clone the repository
-git clone https://github.com/nicholasgriffintn/go-mcp-atlassian.git
+git clone https://github.com/JeremyProffitt/go-mcp-atlassian.git
 cd go-mcp-atlassian
 
 # Build for current platform
