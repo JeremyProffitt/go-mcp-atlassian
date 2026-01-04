@@ -436,6 +436,48 @@ go test -v -race ./...
 - **Cloud**: Ensure you're using your email as username and an API token (not password)
 - **Server/DC**: Use a Personal Access Token with appropriate permissions
 
+## Global Environment File
+
+All go-mcp servers support loading environment variables from `~/.mcp_env`. This provides a central location to configure credentials and settings, especially useful on macOS where GUI applications don't inherit shell environment variables from `.zshrc` or `.bashrc`.
+
+### File Format
+
+Create `~/.mcp_env` with KEY=VALUE pairs:
+
+```bash
+# ~/.mcp_env - MCP Server Environment Variables
+
+# Atlassian Cloud Configuration
+JIRA_URL=https://your-company.atlassian.net
+JIRA_USERNAME=your.email@company.com
+JIRA_API_TOKEN=your_jira_api_token
+CONFLUENCE_URL=https://your-company.atlassian.net/wiki
+CONFLUENCE_USERNAME=your.email@company.com
+CONFLUENCE_API_TOKEN=your_confluence_api_token
+
+# Logging
+MCP_LOG_DIR=~/mcp-logs
+MCP_LOG_LEVEL=info
+```
+
+### Features
+
+- Lines starting with `#` are treated as comments
+- Empty lines are ignored
+- Values can be quoted with single or double quotes
+- **Existing environment variables are NOT overwritten** (env vars take precedence)
+- Paths with `~` are automatically expanded to your home directory
+
+### Path Expansion
+
+All path-related settings support `~` expansion:
+
+```bash
+MCP_LOG_DIR=~/logs/atlassian
+```
+
+This works in the `~/.mcp_env` file, environment variables, and command-line flags.
+
 ### Logging
 
 Enable debug logging for troubleshooting:

@@ -21,6 +21,10 @@ import (
 var Version = "dev"
 
 func main() {
+	// Load environment variables from ~/.mcp_env if it exists
+	// This must happen before flag parsing so env vars are available for defaults
+	logging.LoadEnvFile()
+
 	// Define command-line flags
 	logDir := flag.String("log-dir", "", "Log directory path")
 	logLevel := flag.String("log-level", "info", "Log level (off, error, warn, info, access, debug)")
