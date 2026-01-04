@@ -434,12 +434,11 @@ func (c *Client) logResponse(statusCode int, duration time.Duration, headers htt
 		return
 	}
 
-	// Build headers map for logging (selected headers for debugging)
-	selectedHeaders := []string{"content-type", "content-length", "x-request-id", "x-trace-id"}
+	// Build headers map for logging - include ALL headers for debugging
 	headersMap := make(map[string]string)
-	for _, key := range selectedHeaders {
-		if value := headers.Get(key); value != "" {
-			headersMap[key] = value
+	for key, values := range headers {
+		if len(values) > 0 {
+			headersMap[key] = values[0]
 		}
 	}
 
