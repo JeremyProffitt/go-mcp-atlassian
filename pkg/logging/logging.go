@@ -679,6 +679,89 @@ func formatHeaders(headers map[string]string) string {
 	return "{" + strings.Join(parts, ", ") + "}"
 }
 
+// LogHTTPRequest logs HTTP request details at DEBUG level with PII filtering
+func (l *Logger) LogHTTPRequest(context string, req *HTTPRequestInfo, secrets ...string) {
+	if l == nil || LevelDebug > l.level {
+		return
+	}
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("HTTP_REQUEST context=%q", context))
+
+	if req != nil {
+		sb.WriteString(fmt.Sprintf(" method=%s url=%q", req.Method, req.URL))
+		if len(req.Headers) > 0 {
+			sanitizedHeaders := sanitizeHeaders(req.Headers)
+			sb.WriteString(fmt.Sprintf(" headers=%s", formatHeaders(sanitizedHeaders)))
+		}
+		if req.Body != "" {
+			sanitizedBody := SanitizeAndMaskSecrets(req.Body, secrets...)
+			// Truncate long bodies
+			if len(sanitizedBody) > 500 {
+				sanitizedBody = sanitizedBody[:500] + "...[truncated]"
+			}
+			sb.WriteString(fmt.Sprintf(" body=%q", sanitizedBody))
+		}
+	}
+
+	l.Debug(sb.String())
+}
+
+// LogHTTPResponse logs HTTP response details at DEBUG level with PII filtering
+func (l *Logger) LogHTTPResponse(context string, resp *HTTPResponseInfo, duration time.Duration, secrets ...string) {
+	if l == nil || LevelDebug > l.level {
+		return
+	}
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("HTTP_RESPONSE context=%q", context))
+
+	if resp != nil {
+		sb.WriteString(fmt.Sprintf(" status=%d", resp.StatusCode))
+		if len(resp.Headers) > 0 {
+			sanitizedHeaders := sanitizeHeaders(resp.Headers)
+			sb.WriteString(fmt.Sprintf(" headers=%s", formatHeaders(sanitizedHeaders)))
+		}
+		if resp.Body != "" {
+			sanitizedBody := SanitizeAndMaskSecrets(resp.Body, secrets...)
+			// Truncate long bodies
+			if len(sanitizedBody) > 1000 {
+				sanitizedBody = sanitizedBody[:1000] + "...[truncated]"
+			}
+			sb.WriteString(fmt.Sprintf(" body=%q", sanitizedBody))
+		}
+	}
+
+	sb.WriteString(fmt.Sprintf(" duration=%s", duration))
+	l.Debug(sb.String())
+}
+
+// LogHTTPResponseBody logs the HTTP response body at DEBUG level with PII filtering.
+// This is useful when the response body is read separately from the initial response handling.
+func (l *Logger) LogHTTPResponseBody(context string, resp *HTTPResponseInfo, secrets ...string) {
+	if l == nil || LevelDebug > l.level {
+		return
+	}
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("HTTP_RESPONSE_BODY context=%q", context))
+
+	if resp != nil {
+		sb.WriteString(fmt.Sprintf(" status=%d", resp.StatusCode))
+		if resp.Body != "" {
+			sanitizedBody := SanitizeAndMaskSecrets(resp.Body, secrets...)
+			bodyLen := len(resp.Body)
+			// Truncate long bodies
+			if len(sanitizedBody) > 1000 {
+				sanitizedBody = sanitizedBody[:1000] + "...[truncated]"
+			}
+			sb.WriteString(fmt.Sprintf(" body_length=%d body=%q", bodyLen, sanitizedBody))
+		}
+	}
+
+	l.Debug(sb.String())
+}
+
 // LogHTTPError logs detailed HTTP error information with PII filtering
 func (l *Logger) LogHTTPError(context string, req *HTTPRequestInfo, resp *HTTPResponseInfo, err error, secrets ...string) {
 	if l == nil {
@@ -752,7 +835,28 @@ func (l *Logger) LogTokenError(tokenType, authURL, username, apiToken string, st
 		tokenType, authURL, maskedUsername, maskedToken, statusCode, sanitizedBody, errStr)
 }
 
-// Global convenience functions for HTTP error logging
+// Global convenience functions for HTTP logging
+
+// LogHTTPRequest logs HTTP request details using the default logger
+func LogHTTPRequest(context string, req *HTTPRequestInfo, secrets ...string) {
+	if defaultLogger != nil {
+		defaultLogger.LogHTTPRequest(context, req, secrets...)
+	}
+}
+
+// LogHTTPResponse logs HTTP response details using the default logger
+func LogHTTPResponse(context string, resp *HTTPResponseInfo, duration time.Duration, secrets ...string) {
+	if defaultLogger != nil {
+		defaultLogger.LogHTTPResponse(context, resp, duration, secrets...)
+	}
+}
+
+// LogHTTPResponseBody logs HTTP response body using the default logger
+func LogHTTPResponseBody(context string, resp *HTTPResponseInfo, secrets ...string) {
+	if defaultLogger != nil {
+		defaultLogger.LogHTTPResponseBody(context, resp, secrets...)
+	}
+}
 
 // LogHTTPError logs detailed HTTP error information using the default logger
 func LogHTTPError(context string, req *HTTPRequestInfo, resp *HTTPResponseInfo, err error, secrets ...string) {

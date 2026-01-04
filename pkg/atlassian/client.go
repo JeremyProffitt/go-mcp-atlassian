@@ -24,6 +24,7 @@ type Client struct {
 	authType   AuthType
 	logger     *logging.Logger
 	isCloud    bool
+	secrets    []string // Secrets to redact from logs (tokens, API keys, etc.)
 }
 
 // ClientOption is a function that configures a Client.
@@ -70,16 +71,27 @@ func NewClient(config *Config, opts ...ClientOption) (*Client, error) {
 		authType:   config.AuthType(),
 		isCloud:    config.IsCloud,
 		logger:     logging.GetLogger(),
+		secrets:    make([]string, 0),
 	}
 
-	// Set up authentication header
+	// Set up authentication header and collect secrets for log redaction
 	if config.AuthType() == AuthTypeBearer {
 		// Server/DC: Bearer token with Personal Access Token
 		client.authHeader = "Bearer " + config.PersonalToken
+		if config.PersonalToken != "" {
+			client.secrets = append(client.secrets, config.PersonalToken)
+		}
 	} else {
 		// Cloud: Basic Auth with username + API token
 		auth := config.Username + ":" + config.APIToken
 		client.authHeader = "Basic " + base64.StdEncoding.EncodeToString([]byte(auth))
+		if config.APIToken != "" {
+			client.secrets = append(client.secrets, config.APIToken)
+		}
+		// Also add the base64 encoded auth string as a secret
+		if auth != ":" {
+			client.secrets = append(client.secrets, base64.StdEncoding.EncodeToString([]byte(auth)))
+		}
 	}
 
 	// Apply options
@@ -393,86 +405,48 @@ func (c *Client) UploadFile(ctx context.Context, path string, filename string, c
 	return respBody, nil
 }
 
-// logRequest logs HTTP request details at DEBUG level with redacted sensitive headers.
+// logRequest logs HTTP request details at DEBUG level with redacted sensitive headers and body.
 func (c *Client) logRequest(method, url string, headers http.Header, body []byte) {
 	if c.logger == nil {
 		return
 	}
 
-	// Build redacted headers map
-	redactedHeaders := make(map[string]string)
-	sensitiveHeaders := []string{"authorization", "x-api-key", "api-key", "token", "secret", "password", "credential", "cookie"}
-
+	// Build headers map for logging
+	headersMap := make(map[string]string)
 	for key, values := range headers {
-		if len(values) == 0 {
-			continue
-		}
-		value := values[0]
-		lowerKey := strings.ToLower(key)
-
-		// Check if this is a sensitive header
-		isSensitive := false
-		for _, sensitive := range sensitiveHeaders {
-			if strings.Contains(lowerKey, sensitive) {
-				isSensitive = true
-				break
-			}
-		}
-
-		if isSensitive {
-			redactedHeaders[key] = logging.MaskSecret(value)
-		} else {
-			redactedHeaders[key] = value
+		if len(values) > 0 {
+			headersMap[key] = values[0]
 		}
 	}
 
-	// Format headers for logging
-	headerParts := make([]string, 0, len(redactedHeaders))
-	for k, v := range redactedHeaders {
-		headerParts = append(headerParts, fmt.Sprintf("%s=%q", k, v))
-	}
-	headersStr := "{" + strings.Join(headerParts, ", ") + "}"
-
-	// Format body summary (truncated if large)
-	bodySummary := ""
-	if len(body) > 0 {
-		bodyStr := string(body)
-		if len(bodyStr) > 500 {
-			bodySummary = fmt.Sprintf(" body=%q...[truncated, total %d bytes]", bodyStr[:500], len(body))
-		} else {
-			bodySummary = fmt.Sprintf(" body=%q", bodyStr)
-		}
-	}
-
-	c.logger.Debug("API_REQUEST_DETAIL method=%s url=%q headers=%s%s", method, url, headersStr, bodySummary)
+	// Use the logging package's LogHTTPRequest with secrets for proper redaction
+	c.logger.LogHTTPRequest("api_request", &logging.HTTPRequestInfo{
+		Method:  method,
+		URL:     url,
+		Headers: headersMap,
+		Body:    string(body),
+	}, c.secrets...)
 }
 
-// logResponse logs HTTP response details at DEBUG level.
+// logResponse logs HTTP response details at DEBUG level with redacted sensitive data.
 func (c *Client) logResponse(statusCode int, duration time.Duration, headers http.Header, body []byte) {
 	if c.logger == nil {
 		return
 	}
 
-	// Format response headers (selected ones for debugging)
+	// Build headers map for logging (selected headers for debugging)
 	selectedHeaders := []string{"content-type", "content-length", "x-request-id", "x-trace-id"}
-	headerParts := make([]string, 0)
+	headersMap := make(map[string]string)
 	for _, key := range selectedHeaders {
-		if values := headers.Get(key); values != "" {
-			headerParts = append(headerParts, fmt.Sprintf("%s=%q", key, values))
-		}
-	}
-	headersStr := "{" + strings.Join(headerParts, ", ") + "}"
-
-	// Format body summary (truncated if large)
-	bodySummary := ""
-	if len(body) > 0 {
-		bodyStr := string(body)
-		if len(bodyStr) > 1000 {
-			bodySummary = fmt.Sprintf(" body=%q...[truncated, total %d bytes]", bodyStr[:1000], len(body))
-		} else {
-			bodySummary = fmt.Sprintf(" body=%q", bodyStr)
+		if value := headers.Get(key); value != "" {
+			headersMap[key] = value
 		}
 	}
 
-	c.logger.Debug("API_RESPONSE_DETAIL status=%d duration=%s headers=%s%s", statusCode, duration, headersStr, bodySummary)
+	// Use the logging package's LogHTTPResponse with secrets for proper redaction
+	c.logger.LogHTTPResponse("api_response", &logging.HTTPResponseInfo{
+		StatusCode: statusCode,
+		Headers:    headersMap,
+		Body:       string(body),
+	}, duration, c.secrets...)
 }
