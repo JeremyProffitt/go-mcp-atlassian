@@ -17,8 +17,9 @@ import (
 // API path constants
 const (
 	// API version paths
-	apiV1Path = "/wiki/rest/api"
-	apiV2Path = "/wiki/api/v2"
+	apiV1Path     = "/wiki/rest/api"
+	apiV2Path     = "/wiki/api/v2"
+	apiLatestPath = "/wiki/rest/api/latest"
 
 	// Content endpoints
 	contentEndpoint    = "/content"
@@ -56,12 +57,17 @@ func (c *Client) Config() *atlassian.ConfluenceConfig {
 	return c.config
 }
 
-// apiPath returns the appropriate API path based on version.
+// apiV1Path returns the v1 API path.
+// If UseAPILatest is enabled, it returns /wiki/rest/api/latest instead.
 func (c *Client) apiV1Path() string {
+	if c.config.UseAPILatest {
+		return apiLatestPath
+	}
 	return apiV1Path
 }
 
 // apiV2Path returns the v2 API path.
+// Note: v2 API does not have a "latest" equivalent, so UseAPILatest does not affect this.
 func (c *Client) apiV2Path() string {
 	return apiV2Path
 }

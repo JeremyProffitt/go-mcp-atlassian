@@ -17,8 +17,9 @@ import (
 // API path constants
 const (
 	// API version paths
-	apiV2Path = "/rest/api/2"
-	apiV3Path = "/rest/api/3"
+	apiV2Path     = "/rest/api/2"
+	apiV3Path     = "/rest/api/3"
+	apiLatestPath = "/rest/api/latest"
 
 	// Issue endpoints
 	issueEndpoint       = "/issue"
@@ -72,8 +73,13 @@ func (c *Client) Config() *atlassian.JiraConfig {
 	return c.config
 }
 
-// apiPath returns the appropriate API path based on whether this is a Cloud instance.
+// apiPath returns the appropriate API path based on configuration.
+// If UseAPILatest is enabled, it returns /rest/api/latest.
+// Otherwise, it returns /rest/api/3 for Cloud or /rest/api/2 for Server/DC.
 func (c *Client) apiPath() string {
+	if c.config.UseAPILatest {
+		return apiLatestPath
+	}
 	if c.IsCloud() {
 		return apiV3Path
 	}

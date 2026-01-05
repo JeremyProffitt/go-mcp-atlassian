@@ -60,6 +60,9 @@ type JiraConfig struct {
 
 	// ProjectsFilter is a comma-separated list of project keys to filter.
 	ProjectsFilter []string
+
+	// UseAPILatest uses /rest/api/latest instead of versioned API paths.
+	UseAPILatest bool
 }
 
 // ConfluenceConfig holds the configuration for the Confluence API client.
@@ -68,6 +71,9 @@ type ConfluenceConfig struct {
 
 	// SpacesFilter is a comma-separated list of space keys to filter.
 	SpacesFilter []string
+
+	// UseAPILatest uses /rest/api/latest instead of versioned API paths.
+	UseAPILatest bool
 }
 
 // NewJiraConfig creates a new JiraConfig from environment variables.
@@ -78,6 +84,7 @@ type ConfluenceConfig struct {
 //   - JIRA_PERSONAL_TOKEN: Personal Access Token for Bearer Auth (Server/DC)
 //   - JIRA_SSL_VERIFY: Whether to verify SSL certificates (default: true)
 //   - JIRA_PROJECTS_FILTER: Comma-separated list of project keys to filter
+//   - JIRA_USE_API_LATEST: Set to 1 to use /rest/api/latest instead of versioned API paths (default: 0)
 //   - READ_ONLY_MODE: Whether to run in read-only mode (default: false)
 func NewJiraConfig() *JiraConfig {
 	url := os.Getenv("JIRA_URL")
@@ -89,6 +96,11 @@ func NewJiraConfig() *JiraConfig {
 	readOnlyMode := false
 	if v := os.Getenv("READ_ONLY_MODE"); v != "" {
 		readOnlyMode, _ = strconv.ParseBool(v)
+	}
+
+	useAPILatest := false
+	if v := os.Getenv("JIRA_USE_API_LATEST"); v == "1" {
+		useAPILatest = true
 	}
 
 	var projectsFilter []string
@@ -107,6 +119,7 @@ func NewJiraConfig() *JiraConfig {
 			ReadOnlyMode:  readOnlyMode,
 		},
 		ProjectsFilter: projectsFilter,
+		UseAPILatest:   useAPILatest,
 	}
 }
 
@@ -118,6 +131,7 @@ func NewJiraConfig() *JiraConfig {
 //   - CONFLUENCE_PERSONAL_TOKEN: Personal Access Token for Bearer Auth (Server/DC)
 //   - CONFLUENCE_SSL_VERIFY: Whether to verify SSL certificates (default: true)
 //   - CONFLUENCE_SPACES_FILTER: Comma-separated list of space keys to filter
+//   - CONFLUENCE_USE_API_LATEST: Set to 1 to use /rest/api/latest instead of versioned API paths (default: 0)
 //   - READ_ONLY_MODE: Whether to run in read-only mode (default: false)
 func NewConfluenceConfig() *ConfluenceConfig {
 	url := os.Getenv("CONFLUENCE_URL")
@@ -129,6 +143,11 @@ func NewConfluenceConfig() *ConfluenceConfig {
 	readOnlyMode := false
 	if v := os.Getenv("READ_ONLY_MODE"); v != "" {
 		readOnlyMode, _ = strconv.ParseBool(v)
+	}
+
+	useAPILatest := false
+	if v := os.Getenv("CONFLUENCE_USE_API_LATEST"); v == "1" {
+		useAPILatest = true
 	}
 
 	var spacesFilter []string
@@ -147,6 +166,7 @@ func NewConfluenceConfig() *ConfluenceConfig {
 			ReadOnlyMode:  readOnlyMode,
 		},
 		SpacesFilter: spacesFilter,
+		UseAPILatest: useAPILatest,
 	}
 }
 
