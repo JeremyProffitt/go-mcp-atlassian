@@ -62,7 +62,7 @@ func NewClient(config *Config, opts ...ClientOption) (*Client, error) {
 
 	httpClient := &http.Client{
 		Transport: transport,
-		Timeout:   30 * time.Second,
+		Timeout:   3 * time.Minute,
 	}
 
 	client := &Client{
