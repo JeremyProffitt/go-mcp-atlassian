@@ -45,32 +45,38 @@ func (r *Registry) RegisterAll(server *mcp.Server) {
 
 // registerConfluenceSearch registers the confluence_search tool.
 func (r *Registry) registerConfluenceSearch(server *mcp.Server) {
+	minLimit := float64(1)
+	maxLimit := float64(100)
+
 	server.RegisterTool(
 		mcp.Tool{
 			Name:        "confluence_search",
-			Description: "Search Confluence content using CQL (Confluence Query Language). Returns pages, blog posts, and other content matching the query.",
+			Description: "Search content using CQL (Confluence Query Language). Returns pages, blog posts, and attachments matching the query with titles, excerpts, and URLs.",
 			InputSchema: mcp.JSONSchema{
 				Type: "object",
 				Properties: map[string]mcp.Property{
 					"query": {
 						Type:        "string",
-						Description: "CQL query string. Examples: 'text ~ \"search term\"', 'type = page AND space = KEY', 'label = \"my-label\"'",
+						Description: "CQL query string (e.g., 'text ~ \"search term\"', 'type = page AND space = PROJ', 'label = \"documentation\"', 'creator = currentUser() AND type = page').",
 					},
 					"limit": {
 						Type:        "integer",
-						Description: "Maximum number of results to return (default: 10, max: 100)",
+						Description: "Maximum number of results to return, 1-100. Default: 10.",
 						Default:     10,
+						Minimum:     &minLimit,
+						Maximum:     &maxLimit,
 					},
 					"spaces_filter": {
 						Type:        "string",
-						Description: "Optional: Comma-separated list of space keys to filter results",
+						Description: "Comma-separated space keys to filter results (e.g., 'PROJ,DOCS,TEAM'). Applied as additional AND filter to query.",
 					},
 				},
 				Required: []string{"query"},
 			},
 			Annotations: &mcp.ToolAnnotation{
-				Title:        "Confluence Search",
-				ReadOnlyHint: true,
+				Title:           "Search Content",
+				ReadOnlyHint:    true,
+				DestructiveHint: false,
 			},
 		},
 		func(args map[string]interface{}) (*mcp.CallToolResult, error) {
@@ -155,37 +161,38 @@ func (r *Registry) registerConfluenceGetPage(server *mcp.Server) {
 	server.RegisterTool(
 		mcp.Tool{
 			Name:        "confluence_get_page",
-			Description: "Get a Confluence page by ID or by title and space key. Returns page content, metadata, and version information.",
+			Description: "Get a page by ID or by title and space key. Returns page content in storage format (XHTML), metadata, and version information.",
 			InputSchema: mcp.JSONSchema{
 				Type: "object",
 				Properties: map[string]mcp.Property{
 					"page_id": {
 						Type:        "string",
-						Description: "The ID of the page to retrieve. Either page_id or (title + space_key) is required.",
+						Description: "The page ID (e.g., '12345678'). Use either page_id OR (title + space_key).",
 					},
 					"title": {
 						Type:        "string",
-						Description: "The title of the page to retrieve. Requires space_key to be specified.",
+						Description: "The exact page title. Must be used with space_key.",
 					},
 					"space_key": {
 						Type:        "string",
-						Description: "The space key where the page is located. Required when using title.",
+						Description: "The space key (e.g., 'PROJ', 'DOCS'). Required when using title.",
 					},
 					"include_metadata": {
 						Type:        "boolean",
-						Description: "Whether to include page metadata like version, author, etc. (default: true)",
+						Description: "Include version, status, space info, and URL. Default: true.",
 						Default:     true,
 					},
 					"convert_to_markdown": {
 						Type:        "boolean",
-						Description: "Whether to attempt conversion of storage format to markdown-like text (default: false)",
+						Description: "Convert storage format (XHTML) to readable plain text. Default: false.",
 						Default:     false,
 					},
 				},
 			},
 			Annotations: &mcp.ToolAnnotation{
-				Title:        "Get Confluence Page",
-				ReadOnlyHint: true,
+				Title:           "Get Page",
+				ReadOnlyHint:    true,
+				DestructiveHint: false,
 			},
 		},
 		func(args map[string]interface{}) (*mcp.CallToolResult, error) {
@@ -294,32 +301,38 @@ func (r *Registry) registerConfluenceGetPage(server *mcp.Server) {
 
 // registerConfluenceGetPageChildren registers the confluence_get_page_children tool.
 func (r *Registry) registerConfluenceGetPageChildren(server *mcp.Server) {
+	minLimit := float64(1)
+	maxLimit := float64(100)
+
 	server.RegisterTool(
 		mcp.Tool{
 			Name:        "confluence_get_page_children",
-			Description: "Get child pages of a Confluence page. Returns a list of direct child pages.",
+			Description: "Get direct child pages of a parent page. Returns child page IDs, titles, and status for navigation through page hierarchy.",
 			InputSchema: mcp.JSONSchema{
 				Type: "object",
 				Properties: map[string]mcp.Property{
 					"parent_id": {
 						Type:        "string",
-						Description: "The ID of the parent page",
+						Description: "The ID of the parent page (e.g., '12345678').",
 					},
 					"limit": {
 						Type:        "integer",
-						Description: "Maximum number of results to return (default: 25)",
+						Description: "Maximum number of child pages to return, 1-100. Default: 25.",
 						Default:     25,
+						Minimum:     &minLimit,
+						Maximum:     &maxLimit,
 					},
 					"cursor": {
 						Type:        "string",
-						Description: "Cursor for pagination (optional)",
+						Description: "Pagination cursor from previous response for fetching next page of results.",
 					},
 				},
 				Required: []string{"parent_id"},
 			},
 			Annotations: &mcp.ToolAnnotation{
-				Title:        "Get Page Children",
-				ReadOnlyHint: true,
+				Title:           "Get Page Children",
+				ReadOnlyHint:    true,
+				DestructiveHint: false,
 			},
 		},
 		func(args map[string]interface{}) (*mcp.CallToolResult, error) {
@@ -371,20 +384,21 @@ func (r *Registry) registerConfluenceGetComments(server *mcp.Server) {
 	server.RegisterTool(
 		mcp.Tool{
 			Name:        "confluence_get_comments",
-			Description: "Get comments on a Confluence page. Returns footer comments with their content.",
+			Description: "Get footer comments on a page. Returns comment IDs, content, and version numbers for each comment.",
 			InputSchema: mcp.JSONSchema{
 				Type: "object",
 				Properties: map[string]mcp.Property{
 					"page_id": {
 						Type:        "string",
-						Description: "The ID of the page to get comments for",
+						Description: "The ID of the page to get comments for (e.g., '12345678').",
 					},
 				},
 				Required: []string{"page_id"},
 			},
 			Annotations: &mcp.ToolAnnotation{
-				Title:        "Get Page Comments",
-				ReadOnlyHint: true,
+				Title:           "Get Page Comments",
+				ReadOnlyHint:    true,
+				DestructiveHint: false,
 			},
 		},
 		func(args map[string]interface{}) (*mcp.CallToolResult, error) {
@@ -439,20 +453,21 @@ func (r *Registry) registerConfluenceGetLabels(server *mcp.Server) {
 	server.RegisterTool(
 		mcp.Tool{
 			Name:        "confluence_get_labels",
-			Description: "Get labels attached to a Confluence page.",
+			Description: "Get labels attached to a page. Returns label names and prefixes (global, team, etc.) for categorization and filtering.",
 			InputSchema: mcp.JSONSchema{
 				Type: "object",
 				Properties: map[string]mcp.Property{
 					"page_id": {
 						Type:        "string",
-						Description: "The ID of the page to get labels for",
+						Description: "The ID of the page to get labels for (e.g., '12345678').",
 					},
 				},
 				Required: []string{"page_id"},
 			},
 			Annotations: &mcp.ToolAnnotation{
-				Title:        "Get Page Labels",
-				ReadOnlyHint: true,
+				Title:           "Get Page Labels",
+				ReadOnlyHint:    true,
+				DestructiveHint: false,
 			},
 		},
 		func(args map[string]interface{}) (*mcp.CallToolResult, error) {
@@ -500,17 +515,17 @@ func (r *Registry) registerConfluenceAddLabel(server *mcp.Server) {
 	server.RegisterTool(
 		mcp.Tool{
 			Name:        "confluence_add_label",
-			Description: "Add a label to a Confluence page. This is a write operation.",
+			Description: "Add a global label to a page. Labels are used for categorization and can be searched with CQL. Idempotent - adding existing label has no effect.",
 			InputSchema: mcp.JSONSchema{
 				Type: "object",
 				Properties: map[string]mcp.Property{
 					"page_id": {
 						Type:        "string",
-						Description: "The ID of the page to add the label to",
+						Description: "The ID of the page to add the label to (e.g., '12345678').",
 					},
 					"name": {
 						Type:        "string",
-						Description: "The label name to add",
+						Description: "The label name to add (e.g., 'documentation', 'reviewed', 'needs-update'). Use lowercase with hyphens.",
 					},
 				},
 				Required: []string{"page_id", "name"},
@@ -578,31 +593,31 @@ func (r *Registry) registerConfluenceCreatePage(server *mcp.Server) {
 	server.RegisterTool(
 		mcp.Tool{
 			Name:        "confluence_create_page",
-			Description: "Create a new Confluence page. This is a write operation.",
+			Description: "Create a new page in a space. Returns the created page ID and URL. Content must be in Confluence storage format (XHTML).",
 			InputSchema: mcp.JSONSchema{
 				Type: "object",
 				Properties: map[string]mcp.Property{
 					"space_key": {
 						Type:        "string",
-						Description: "The key of the space where the page will be created",
+						Description: "The space key where the page will be created (e.g., 'PROJ', 'DOCS').",
 					},
 					"title": {
 						Type:        "string",
-						Description: "The title of the new page",
+						Description: "The title of the new page. Must be unique within the space.",
 					},
 					"content": {
 						Type:        "string",
-						Description: "The content of the page in storage format (XHTML)",
+						Description: "Page content in storage format (XHTML). Example: '<p>Hello <strong>world</strong></p>' or '<ac:structured-macro>...</ac:structured-macro>'.",
 					},
 					"parent_id": {
 						Type:        "string",
-						Description: "Optional: The ID of the parent page for hierarchical placement",
+						Description: "Parent page ID for hierarchical placement (e.g., '12345678'). If omitted, page is created at space root.",
 					},
 				},
 				Required: []string{"space_key", "title", "content"},
 			},
 			Annotations: &mcp.ToolAnnotation{
-				Title:           "Create Confluence Page",
+				Title:           "Create Page",
 				ReadOnlyHint:    false,
 				DestructiveHint: false,
 				IdempotentHint:  false,
@@ -658,27 +673,27 @@ func (r *Registry) registerConfluenceUpdatePage(server *mcp.Server) {
 	server.RegisterTool(
 		mcp.Tool{
 			Name:        "confluence_update_page",
-			Description: "Update an existing Confluence page. This is a write operation that increments the page version.",
+			Description: "Update an existing page's title and/or content. Automatically increments version. Use confluence_get_page first to get current content if needed.",
 			InputSchema: mcp.JSONSchema{
 				Type: "object",
 				Properties: map[string]mcp.Property{
 					"page_id": {
 						Type:        "string",
-						Description: "The ID of the page to update",
+						Description: "The ID of the page to update (e.g., '12345678').",
 					},
 					"title": {
 						Type:        "string",
-						Description: "The title for the page (required)",
+						Description: "The page title (can be same as current or changed).",
 					},
 					"content": {
 						Type:        "string",
-						Description: "The new content for the page in storage format (XHTML)",
+						Description: "The new page content in storage format (XHTML). Replaces entire page content.",
 					},
 				},
 				Required: []string{"page_id", "title", "content"},
 			},
 			Annotations: &mcp.ToolAnnotation{
-				Title:           "Update Confluence Page",
+				Title:           "Update Page",
 				ReadOnlyHint:    false,
 				DestructiveHint: false,
 				IdempotentHint:  false,
@@ -752,19 +767,19 @@ func (r *Registry) registerConfluenceDeletePage(server *mcp.Server) {
 	server.RegisterTool(
 		mcp.Tool{
 			Name:        "confluence_delete_page",
-			Description: "Delete a Confluence page. This is a destructive write operation.",
+			Description: "Permanently delete a page. WARNING: This action cannot be undone. Child pages will become orphaned. Consider archiving instead.",
 			InputSchema: mcp.JSONSchema{
 				Type: "object",
 				Properties: map[string]mcp.Property{
 					"page_id": {
 						Type:        "string",
-						Description: "The ID of the page to delete",
+						Description: "The ID of the page to delete (e.g., '12345678').",
 					},
 				},
 				Required: []string{"page_id"},
 			},
 			Annotations: &mcp.ToolAnnotation{
-				Title:           "Delete Confluence Page",
+				Title:           "Delete Page",
 				ReadOnlyHint:    false,
 				DestructiveHint: true,
 				IdempotentHint:  true,
@@ -803,17 +818,17 @@ func (r *Registry) registerConfluenceAddComment(server *mcp.Server) {
 	server.RegisterTool(
 		mcp.Tool{
 			Name:        "confluence_add_comment",
-			Description: "Add a comment to a Confluence page. This is a write operation.",
+			Description: "Add a footer comment to a page. Returns the created comment ID. Content must be in storage format (XHTML).",
 			InputSchema: mcp.JSONSchema{
 				Type: "object",
 				Properties: map[string]mcp.Property{
 					"page_id": {
 						Type:        "string",
-						Description: "The ID of the page to add the comment to",
+						Description: "The ID of the page to add the comment to (e.g., '12345678').",
 					},
 					"content": {
 						Type:        "string",
-						Description: "The comment content in storage format (XHTML)",
+						Description: "The comment content in storage format (XHTML). Example: '<p>Great documentation!</p>' or '<p>@[accountId] please review</p>'.",
 					},
 				},
 				Required: []string{"page_id", "content"},
@@ -870,28 +885,34 @@ func (r *Registry) registerConfluenceAddComment(server *mcp.Server) {
 
 // registerConfluenceSearchUser registers the confluence_search_user tool.
 func (r *Registry) registerConfluenceSearchUser(server *mcp.Server) {
+	minLimit := float64(1)
+	maxLimit := float64(100)
+
 	server.RegisterTool(
 		mcp.Tool{
 			Name:        "confluence_search_user",
-			Description: "Search for Confluence users by name or email.",
+			Description: "Search for users by name or email. Returns account IDs needed for mentions and permissions.",
 			InputSchema: mcp.JSONSchema{
 				Type: "object",
 				Properties: map[string]mcp.Property{
 					"query": {
 						Type:        "string",
-						Description: "Search query (name or email)",
+						Description: "Search query - matches against display name or email (e.g., 'john', 'john.doe', 'john@example.com').",
 					},
 					"limit": {
 						Type:        "integer",
-						Description: "Maximum number of results to return (default: 10)",
+						Description: "Maximum number of users to return, 1-100. Default: 10.",
 						Default:     10,
+						Minimum:     &minLimit,
+						Maximum:     &maxLimit,
 					},
 				},
 				Required: []string{"query"},
 			},
 			Annotations: &mcp.ToolAnnotation{
-				Title:        "Search Confluence Users",
-				ReadOnlyHint: true,
+				Title:           "Search Users",
+				ReadOnlyHint:    true,
+				DestructiveHint: false,
 			},
 		},
 		func(args map[string]interface{}) (*mcp.CallToolResult, error) {

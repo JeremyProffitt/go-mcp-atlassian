@@ -74,14 +74,15 @@ func (r *JiraRegistry) readOnlyError() *mcp.CallToolResult {
 func (r *JiraRegistry) registerGetUserProfile(server *mcp.Server) {
 	server.RegisterTool(mcp.Tool{
 		Name:        "jira_get_user_profile",
-		Description: "Get the current authenticated user's profile information. Returns user details including display name, email, timezone, and account status.",
+		Description: "Get the current authenticated user's profile information including display name, email, timezone, and account status. Use this to verify authentication or get the current user's account ID for assignee filtering.",
 		InputSchema: mcp.JSONSchema{
 			Type:       "object",
 			Properties: map[string]mcp.Property{},
 		},
 		Annotations: &mcp.ToolAnnotation{
-			Title:        "Get User Profile",
-			ReadOnlyHint: true,
+			Title:           "Get User Profile",
+			ReadOnlyHint:    true,
+			DestructiveHint: false,
 		},
 	}, func(args map[string]interface{}) (*mcp.CallToolResult, error) {
 		logging.ToolCall("jira_get_user_profile", args, 0, false)
@@ -102,30 +103,31 @@ func (r *JiraRegistry) registerGetUserProfile(server *mcp.Server) {
 func (r *JiraRegistry) registerGetIssue(server *mcp.Server) {
 	server.RegisterTool(mcp.Tool{
 		Name:        "jira_get_issue",
-		Description: "Get detailed information about a Jira issue by its key or ID. Can optionally expand specific sections.",
+		Description: "Get detailed information about an issue by its key or ID. Returns all fields by default, or specify fields/expand parameters to customize the response.",
 		InputSchema: mcp.JSONSchema{
 			Type: "object",
 			Properties: map[string]mcp.Property{
 				"issue_key": {
 					Type:        "string",
-					Description: "The issue key (e.g., 'PROJ-123') or issue ID.",
+					Description: "The issue key or ID (e.g., 'PROJ-123', 'PROJECT-1', '10001').",
 				},
 				"fields": {
 					Type:        "array",
-					Description: "Specific fields to return. If not specified, returns all navigable fields.",
+					Description: "Specific fields to return (e.g., 'summary', 'status', 'assignee', 'customfield_10001'). If not specified, returns all navigable fields.",
 					Items:       &mcp.Property{Type: "string"},
 				},
 				"expand": {
 					Type:        "array",
-					Description: "Sections to expand (e.g., 'renderedFields', 'changelog', 'transitions', 'names').",
+					Description: "Sections to expand for additional data (e.g., 'renderedFields', 'changelog', 'transitions', 'names', 'editmeta').",
 					Items:       &mcp.Property{Type: "string"},
 				},
 			},
 			Required: []string{"issue_key"},
 		},
 		Annotations: &mcp.ToolAnnotation{
-			Title:        "Get Issue",
-			ReadOnlyHint: true,
+			Title:           "Get Issue",
+			ReadOnlyHint:    true,
+			DestructiveHint: false,
 		},
 	}, func(args map[string]interface{}) (*mcp.CallToolResult, error) {
 		logging.ToolCall("jira_get_issue", args, 0, false)
@@ -157,48 +159,50 @@ func (r *JiraRegistry) registerGetIssue(server *mcp.Server) {
 
 // 3. jira_search - Search using JQL with pagination
 func (r *JiraRegistry) registerSearch(server *mcp.Server) {
-	minVal := float64(0)
-	maxVal := float64(100)
+	minStartAt := float64(0)
+	minResults := float64(1)
+	maxResults := float64(100)
 
 	server.RegisterTool(mcp.Tool{
 		Name:        "jira_search",
-		Description: "Search for Jira issues using JQL (Jira Query Language). Supports pagination and field selection.",
+		Description: "Search for issues using JQL (Jira Query Language) with pagination and field selection. Use for complex queries combining project, status, assignee, labels, and date filters.",
 		InputSchema: mcp.JSONSchema{
 			Type: "object",
 			Properties: map[string]mcp.Property{
 				"jql": {
 					Type:        "string",
-					Description: "JQL query string (e.g., 'project = PROJ AND status = Open ORDER BY created DESC').",
+					Description: "JQL query string (e.g., 'project = PROJ AND status = \"In Progress\"', 'assignee = currentUser() AND updated >= -7d', 'labels IN (bug, critical) ORDER BY priority DESC').",
 				},
 				"fields": {
 					Type:        "array",
-					Description: "Fields to return for each issue. Defaults to key, summary, status, assignee.",
+					Description: "Fields to return for each issue (e.g., 'summary', 'status', 'assignee', 'priority'). Defaults to key, summary, status, assignee, priority, created, updated.",
 					Items:       &mcp.Property{Type: "string"},
 				},
 				"start_at": {
-					Type:        "number",
-					Description: "Index of the first result to return (0-based pagination).",
+					Type:        "integer",
+					Description: "0-based index of the first result to return (e.g., 0 for first page, 50 for second page with max_results=50).",
 					Default:     0,
-					Minimum:     &minVal,
+					Minimum:     &minStartAt,
 				},
 				"max_results": {
-					Type:        "number",
-					Description: "Maximum number of results to return (default: 50, max: 100).",
+					Type:        "integer",
+					Description: "Maximum number of results per page, 1-100 (e.g., 25, 50, 100). Default: 50.",
 					Default:     50,
-					Minimum:     &minVal,
-					Maximum:     &maxVal,
+					Minimum:     &minResults,
+					Maximum:     &maxResults,
 				},
 				"expand": {
 					Type:        "array",
-					Description: "Sections to expand in each issue.",
+					Description: "Sections to expand in each issue (e.g., 'renderedFields', 'changelog', 'transitions').",
 					Items:       &mcp.Property{Type: "string"},
 				},
 			},
 			Required: []string{"jql"},
 		},
 		Annotations: &mcp.ToolAnnotation{
-			Title:        "Search Issues",
-			ReadOnlyHint: true,
+			Title:           "Search Issues",
+			ReadOnlyHint:    true,
+			DestructiveHint: false,
 		},
 	}, func(args map[string]interface{}) (*mcp.CallToolResult, error) {
 		logging.ToolCall("jira_search", args, 0, false)
@@ -246,25 +250,26 @@ func (r *JiraRegistry) registerSearch(server *mcp.Server) {
 func (r *JiraRegistry) registerSearchFields(server *mcp.Server) {
 	server.RegisterTool(mcp.Tool{
 		Name:        "jira_search_fields",
-		Description: "Search for Jira field definitions by keyword. Useful for finding custom field IDs and understanding available fields.",
+		Description: "Search for field definitions by keyword. Returns field IDs needed for custom field references in queries and updates (e.g., 'customfield_10001').",
 		InputSchema: mcp.JSONSchema{
 			Type: "object",
 			Properties: map[string]mcp.Property{
 				"keyword": {
 					Type:        "string",
-					Description: "Keyword to search for in field names and descriptions.",
+					Description: "Keyword to search in field names and IDs (e.g., 'sprint', 'story points', 'epic').",
 				},
 				"field_type": {
 					Type:        "string",
-					Description: "Filter by field type ('custom' or 'system').",
+					Description: "Filter by field type: 'custom' for custom fields, 'system' for built-in fields, 'all' for both.",
 					Enum:        []string{"custom", "system", "all"},
 					Default:     "all",
 				},
 			},
 		},
 		Annotations: &mcp.ToolAnnotation{
-			Title:        "Search Fields",
-			ReadOnlyHint: true,
+			Title:           "Search Fields",
+			ReadOnlyHint:    true,
+			DestructiveHint: false,
 		},
 	}, func(args map[string]interface{}) (*mcp.CallToolResult, error) {
 		logging.ToolCall("jira_search_fields", args, 0, false)
@@ -312,44 +317,52 @@ func (r *JiraRegistry) registerSearchFields(server *mcp.Server) {
 
 // 5. jira_get_project_issues - Get issues for a project
 func (r *JiraRegistry) registerGetProjectIssues(server *mcp.Server) {
+	minStartAt := float64(0)
+	minResults := float64(1)
+	maxResults := float64(100)
+
 	server.RegisterTool(mcp.Tool{
 		Name:        "jira_get_project_issues",
-		Description: "Get all issues for a specific Jira project with optional filtering and pagination.",
+		Description: "Get issues for a specific project with optional status, type, and assignee filtering. Results are ordered by creation date descending.",
 		InputSchema: mcp.JSONSchema{
 			Type: "object",
 			Properties: map[string]mcp.Property{
 				"project_key": {
 					Type:        "string",
-					Description: "The project key (e.g., 'PROJ').",
+					Description: "The project key (e.g., 'PROJ', 'MYPROJECT').",
 				},
 				"status": {
 					Type:        "string",
-					Description: "Filter by status name or category (e.g., 'Open', 'In Progress', 'Done').",
+					Description: "Filter by status name (e.g., 'Open', 'In Progress', 'Done', 'Closed').",
 				},
 				"issue_type": {
 					Type:        "string",
-					Description: "Filter by issue type (e.g., 'Bug', 'Story', 'Task').",
+					Description: "Filter by issue type (e.g., 'Bug', 'Story', 'Task', 'Epic', 'Sub-task').",
 				},
 				"assignee": {
 					Type:        "string",
-					Description: "Filter by assignee account ID or 'unassigned' for unassigned issues.",
+					Description: "Filter by assignee account ID, or 'unassigned' for unassigned issues. Use jira_get_user_profile to get current user's account ID.",
 				},
 				"start_at": {
-					Type:        "number",
-					Description: "Index of the first result to return.",
+					Type:        "integer",
+					Description: "0-based index of the first result to return for pagination.",
 					Default:     0,
+					Minimum:     &minStartAt,
 				},
 				"max_results": {
-					Type:        "number",
-					Description: "Maximum number of results to return (default: 50).",
+					Type:        "integer",
+					Description: "Maximum number of results per page, 1-100. Default: 50.",
 					Default:     50,
+					Minimum:     &minResults,
+					Maximum:     &maxResults,
 				},
 			},
 			Required: []string{"project_key"},
 		},
 		Annotations: &mcp.ToolAnnotation{
-			Title:        "Get Project Issues",
-			ReadOnlyHint: true,
+			Title:           "Get Project Issues",
+			ReadOnlyHint:    true,
+			DestructiveHint: false,
 		},
 	}, func(args map[string]interface{}) (*mcp.CallToolResult, error) {
 		logging.ToolCall("jira_get_project_issues", args, 0, false)
@@ -410,20 +423,21 @@ func (r *JiraRegistry) registerGetProjectIssues(server *mcp.Server) {
 func (r *JiraRegistry) registerGetTransitions(server *mcp.Server) {
 	server.RegisterTool(mcp.Tool{
 		Name:        "jira_get_transitions",
-		Description: "Get available workflow transitions for an issue. Shows what status changes are possible for the current user.",
+		Description: "Get available workflow transitions for an issue. Returns transition IDs and names needed for jira_transition_issue. Results depend on current issue status and user permissions.",
 		InputSchema: mcp.JSONSchema{
 			Type: "object",
 			Properties: map[string]mcp.Property{
 				"issue_key": {
 					Type:        "string",
-					Description: "The issue key (e.g., 'PROJ-123').",
+					Description: "The issue key (e.g., 'PROJ-123', 'MYPROJECT-456').",
 				},
 			},
 			Required: []string{"issue_key"},
 		},
 		Annotations: &mcp.ToolAnnotation{
-			Title:        "Get Transitions",
-			ReadOnlyHint: true,
+			Title:           "Get Transitions",
+			ReadOnlyHint:    true,
+			DestructiveHint: false,
 		},
 	}, func(args map[string]interface{}) (*mcp.CallToolResult, error) {
 		logging.ToolCall("jira_get_transitions", args, 0, false)
@@ -450,9 +464,13 @@ func (r *JiraRegistry) registerGetTransitions(server *mcp.Server) {
 
 // 7. jira_get_worklog - Get worklog entries
 func (r *JiraRegistry) registerGetWorklog(server *mcp.Server) {
+	minStartAt := float64(0)
+	minResults := float64(1)
+	maxResults := float64(100)
+
 	server.RegisterTool(mcp.Tool{
 		Name:        "jira_get_worklog",
-		Description: "Get worklog entries for a Jira issue showing time spent by users.",
+		Description: "Get worklog entries for an issue showing time spent by users. Returns author, time spent, date started, and comments for each entry.",
 		InputSchema: mcp.JSONSchema{
 			Type: "object",
 			Properties: map[string]mcp.Property{
@@ -461,21 +479,25 @@ func (r *JiraRegistry) registerGetWorklog(server *mcp.Server) {
 					Description: "The issue key (e.g., 'PROJ-123').",
 				},
 				"start_at": {
-					Type:        "number",
-					Description: "Index of the first worklog to return.",
+					Type:        "integer",
+					Description: "0-based index of the first worklog to return for pagination.",
 					Default:     0,
+					Minimum:     &minStartAt,
 				},
 				"max_results": {
-					Type:        "number",
-					Description: "Maximum number of worklogs to return (default: 50).",
+					Type:        "integer",
+					Description: "Maximum number of worklogs per page, 1-100. Default: 50.",
 					Default:     50,
+					Minimum:     &minResults,
+					Maximum:     &maxResults,
 				},
 			},
 			Required: []string{"issue_key"},
 		},
 		Annotations: &mcp.ToolAnnotation{
-			Title:        "Get Worklog",
-			ReadOnlyHint: true,
+			Title:           "Get Worklog",
+			ReadOnlyHint:    true,
+			DestructiveHint: false,
 		},
 	}, func(args map[string]interface{}) (*mcp.CallToolResult, error) {
 		logging.ToolCall("jira_get_worklog", args, 0, false)
@@ -507,7 +529,7 @@ func (r *JiraRegistry) registerGetWorklog(server *mcp.Server) {
 func (r *JiraRegistry) registerDownloadAttachments(server *mcp.Server) {
 	server.RegisterTool(mcp.Tool{
 		Name:        "jira_download_attachments",
-		Description: "Get attachment information and download URLs for a Jira issue. Returns attachment metadata including content URLs.",
+		Description: "Get attachment metadata and download URLs for an issue. Returns filename, size, MIME type, author, and content URL for each attachment.",
 		InputSchema: mcp.JSONSchema{
 			Type: "object",
 			Properties: map[string]mcp.Property{
@@ -519,8 +541,9 @@ func (r *JiraRegistry) registerDownloadAttachments(server *mcp.Server) {
 			Required: []string{"issue_key"},
 		},
 		Annotations: &mcp.ToolAnnotation{
-			Title:        "Get Attachments",
-			ReadOnlyHint: true,
+			Title:           "Get Attachments",
+			ReadOnlyHint:    true,
+			DestructiveHint: false,
 		},
 	}, func(args map[string]interface{}) (*mcp.CallToolResult, error) {
 		logging.ToolCall("jira_download_attachments", args, 0, false)
@@ -547,31 +570,39 @@ func (r *JiraRegistry) registerDownloadAttachments(server *mcp.Server) {
 
 // 9. jira_get_agile_boards - Get agile boards
 func (r *JiraRegistry) registerGetAgileBoards(server *mcp.Server) {
+	minStartAt := float64(0)
+	minResults := float64(1)
+	maxResults := float64(100)
+
 	server.RegisterTool(mcp.Tool{
 		Name:        "jira_get_agile_boards",
-		Description: "Get Jira Agile boards (Scrum and Kanban). Can filter by project.",
+		Description: "Get Agile boards (Scrum and Kanban). Returns board IDs needed for jira_get_board_issues and jira_get_sprints_from_board.",
 		InputSchema: mcp.JSONSchema{
 			Type: "object",
 			Properties: map[string]mcp.Property{
 				"project_key": {
 					Type:        "string",
-					Description: "Filter boards by project key or ID.",
+					Description: "Filter boards by project key (e.g., 'PROJ'). If omitted, returns all accessible boards.",
 				},
 				"start_at": {
-					Type:        "number",
-					Description: "Index of the first result to return.",
+					Type:        "integer",
+					Description: "0-based index of the first result to return for pagination.",
 					Default:     0,
+					Minimum:     &minStartAt,
 				},
 				"max_results": {
-					Type:        "number",
-					Description: "Maximum number of results to return (default: 50).",
+					Type:        "integer",
+					Description: "Maximum number of boards per page, 1-100. Default: 50.",
 					Default:     50,
+					Minimum:     &minResults,
+					Maximum:     &maxResults,
 				},
 			},
 		},
 		Annotations: &mcp.ToolAnnotation{
-			Title:        "Get Agile Boards",
-			ReadOnlyHint: true,
+			Title:           "Get Agile Boards",
+			ReadOnlyHint:    true,
+			DestructiveHint: false,
 		},
 	}, func(args map[string]interface{}) (*mcp.CallToolResult, error) {
 		logging.ToolCall("jira_get_agile_boards", args, 0, false)
@@ -597,36 +628,46 @@ func (r *JiraRegistry) registerGetAgileBoards(server *mcp.Server) {
 
 // 10. jira_get_board_issues - Get issues for a board
 func (r *JiraRegistry) registerGetBoardIssues(server *mcp.Server) {
+	minBoardID := float64(1)
+	minStartAt := float64(0)
+	minResults := float64(1)
+	maxResults := float64(100)
+
 	server.RegisterTool(mcp.Tool{
 		Name:        "jira_get_board_issues",
-		Description: "Get issues on a specific Jira Agile board. Uses the board's project to search for issues.",
+		Description: "Get issues on a specific Agile board. Uses the board's project filter and optionally combines with additional JQL.",
 		InputSchema: mcp.JSONSchema{
 			Type: "object",
 			Properties: map[string]mcp.Property{
 				"board_id": {
-					Type:        "number",
-					Description: "The board ID.",
+					Type:        "integer",
+					Description: "The board ID (get from jira_get_agile_boards).",
+					Minimum:     &minBoardID,
 				},
 				"jql": {
 					Type:        "string",
-					Description: "Additional JQL filter to apply.",
+					Description: "Additional JQL filter to combine with board's project (e.g., 'status = \"In Progress\"', 'assignee = currentUser()').",
 				},
 				"start_at": {
-					Type:        "number",
-					Description: "Index of the first result to return.",
+					Type:        "integer",
+					Description: "0-based index of the first result to return for pagination.",
 					Default:     0,
+					Minimum:     &minStartAt,
 				},
 				"max_results": {
-					Type:        "number",
-					Description: "Maximum number of results to return (default: 50).",
+					Type:        "integer",
+					Description: "Maximum number of results per page, 1-100. Default: 50.",
 					Default:     50,
+					Minimum:     &minResults,
+					Maximum:     &maxResults,
 				},
 			},
 			Required: []string{"board_id"},
 		},
 		Annotations: &mcp.ToolAnnotation{
-			Title:        "Get Board Issues",
-			ReadOnlyHint: true,
+			Title:           "Get Board Issues",
+			ReadOnlyHint:    true,
+			DestructiveHint: false,
 		},
 	}, func(args map[string]interface{}) (*mcp.CallToolResult, error) {
 		logging.ToolCall("jira_get_board_issues", args, 0, false)
@@ -685,37 +726,47 @@ func (r *JiraRegistry) registerGetBoardIssues(server *mcp.Server) {
 
 // 11. jira_get_sprints_from_board - Get sprints from board
 func (r *JiraRegistry) registerGetSprintsFromBoard(server *mcp.Server) {
+	minBoardID := float64(1)
+	minStartAt := float64(0)
+	minResults := float64(1)
+	maxResults := float64(100)
+
 	server.RegisterTool(mcp.Tool{
 		Name:        "jira_get_sprints_from_board",
-		Description: "Get all sprints for a Jira Agile board. Can filter by sprint state.",
+		Description: "Get sprints for an Agile board. Returns sprint IDs needed for jira_get_sprint_issues. Filter by state to find active or upcoming sprints.",
 		InputSchema: mcp.JSONSchema{
 			Type: "object",
 			Properties: map[string]mcp.Property{
 				"board_id": {
-					Type:        "number",
-					Description: "The board ID.",
+					Type:        "integer",
+					Description: "The board ID (get from jira_get_agile_boards).",
+					Minimum:     &minBoardID,
 				},
 				"state": {
 					Type:        "string",
-					Description: "Filter by sprint state.",
+					Description: "Filter by sprint state: 'future' (planned), 'active' (current), 'closed' (completed).",
 					Enum:        []string{"future", "active", "closed"},
 				},
 				"start_at": {
-					Type:        "number",
-					Description: "Index of the first result to return.",
+					Type:        "integer",
+					Description: "0-based index of the first result to return for pagination.",
 					Default:     0,
+					Minimum:     &minStartAt,
 				},
 				"max_results": {
-					Type:        "number",
-					Description: "Maximum number of results to return (default: 50).",
+					Type:        "integer",
+					Description: "Maximum number of sprints per page, 1-100. Default: 50.",
 					Default:     50,
+					Minimum:     &minResults,
+					Maximum:     &maxResults,
 				},
 			},
 			Required: []string{"board_id"},
 		},
 		Annotations: &mcp.ToolAnnotation{
-			Title:        "Get Sprints",
-			ReadOnlyHint: true,
+			Title:           "Get Sprints",
+			ReadOnlyHint:    true,
+			DestructiveHint: false,
 		},
 	}, func(args map[string]interface{}) (*mcp.CallToolResult, error) {
 		logging.ToolCall("jira_get_sprints_from_board", args, 0, false)
@@ -746,36 +797,46 @@ func (r *JiraRegistry) registerGetSprintsFromBoard(server *mcp.Server) {
 
 // 12. jira_get_sprint_issues - Get sprint issues
 func (r *JiraRegistry) registerGetSprintIssues(server *mcp.Server) {
+	minSprintID := float64(1)
+	minStartAt := float64(0)
+	minResults := float64(1)
+	maxResults := float64(100)
+
 	server.RegisterTool(mcp.Tool{
 		Name:        "jira_get_sprint_issues",
-		Description: "Get all issues in a specific sprint.",
+		Description: "Get all issues in a specific sprint. Optionally filter with additional JQL criteria.",
 		InputSchema: mcp.JSONSchema{
 			Type: "object",
 			Properties: map[string]mcp.Property{
 				"sprint_id": {
-					Type:        "number",
-					Description: "The sprint ID.",
+					Type:        "integer",
+					Description: "The sprint ID (get from jira_get_sprints_from_board).",
+					Minimum:     &minSprintID,
 				},
 				"jql": {
 					Type:        "string",
-					Description: "Additional JQL filter to apply.",
+					Description: "Additional JQL filter to apply (e.g., 'status = \"In Progress\"', 'assignee = currentUser()').",
 				},
 				"start_at": {
-					Type:        "number",
-					Description: "Index of the first result to return.",
+					Type:        "integer",
+					Description: "0-based index of the first result to return for pagination.",
 					Default:     0,
+					Minimum:     &minStartAt,
 				},
 				"max_results": {
-					Type:        "number",
-					Description: "Maximum number of results to return (default: 50).",
+					Type:        "integer",
+					Description: "Maximum number of results per page, 1-100. Default: 50.",
 					Default:     50,
+					Minimum:     &minResults,
+					Maximum:     &maxResults,
 				},
 			},
 			Required: []string{"sprint_id"},
 		},
 		Annotations: &mcp.ToolAnnotation{
-			Title:        "Get Sprint Issues",
-			ReadOnlyHint: true,
+			Title:           "Get Sprint Issues",
+			ReadOnlyHint:    true,
+			DestructiveHint: false,
 		},
 	}, func(args map[string]interface{}) (*mcp.CallToolResult, error) {
 		logging.ToolCall("jira_get_sprint_issues", args, 0, false)
@@ -812,14 +873,15 @@ func (r *JiraRegistry) registerGetSprintIssues(server *mcp.Server) {
 func (r *JiraRegistry) registerGetLinkTypes(server *mcp.Server) {
 	server.RegisterTool(mcp.Tool{
 		Name:        "jira_get_link_types",
-		Description: "Get all available issue link types (e.g., 'blocks', 'is blocked by', 'relates to').",
+		Description: "Get all available issue link types. Returns link type names needed for jira_create_issue_link (e.g., 'Blocks', 'Cloners', 'Duplicate', 'Relates').",
 		InputSchema: mcp.JSONSchema{
 			Type:       "object",
 			Properties: map[string]mcp.Property{},
 		},
 		Annotations: &mcp.ToolAnnotation{
-			Title:        "Get Link Types",
-			ReadOnlyHint: true,
+			Title:           "Get Link Types",
+			ReadOnlyHint:    true,
+			DestructiveHint: false,
 		},
 	}, func(args map[string]interface{}) (*mcp.CallToolResult, error) {
 		logging.ToolCall("jira_get_link_types", args, 0, false)
@@ -843,21 +905,22 @@ func (r *JiraRegistry) registerGetLinkTypes(server *mcp.Server) {
 func (r *JiraRegistry) registerBatchGetChangelogs(server *mcp.Server) {
 	server.RegisterTool(mcp.Tool{
 		Name:        "jira_batch_get_changelogs",
-		Description: "Get change history (changelogs) for one or more Jira issues. Shows all field changes over time.",
+		Description: "Get change history (changelogs) for one or more issues. Returns all field changes with timestamps, authors, and old/new values.",
 		InputSchema: mcp.JSONSchema{
 			Type: "object",
 			Properties: map[string]mcp.Property{
 				"issue_keys": {
 					Type:        "array",
-					Description: "List of issue keys to get changelogs for.",
+					Description: "List of issue keys to get changelogs for (e.g., ['PROJ-123', 'PROJ-456']).",
 					Items:       &mcp.Property{Type: "string"},
 				},
 			},
 			Required: []string{"issue_keys"},
 		},
 		Annotations: &mcp.ToolAnnotation{
-			Title:        "Batch Get Changelogs",
-			ReadOnlyHint: true,
+			Title:           "Batch Get Changelogs",
+			ReadOnlyHint:    true,
+			DestructiveHint: false,
 		},
 	}, func(args map[string]interface{}) (*mcp.CallToolResult, error) {
 		logging.ToolCall("jira_batch_get_changelogs", args, 0, false)
@@ -897,20 +960,21 @@ func (r *JiraRegistry) registerBatchGetChangelogs(server *mcp.Server) {
 func (r *JiraRegistry) registerGetProjectVersions(server *mcp.Server) {
 	server.RegisterTool(mcp.Tool{
 		Name:        "jira_get_project_versions",
-		Description: "Get all versions (fix versions/releases) for a Jira project.",
+		Description: "Get all versions (fix versions/releases) for a project. Returns version names, release dates, and status for use in issue creation and filtering.",
 		InputSchema: mcp.JSONSchema{
 			Type: "object",
 			Properties: map[string]mcp.Property{
 				"project_key": {
 					Type:        "string",
-					Description: "The project key (e.g., 'PROJ').",
+					Description: "The project key (e.g., 'PROJ', 'MYPROJECT').",
 				},
 			},
 			Required: []string{"project_key"},
 		},
 		Annotations: &mcp.ToolAnnotation{
-			Title:        "Get Project Versions",
-			ReadOnlyHint: true,
+			Title:           "Get Project Versions",
+			ReadOnlyHint:    true,
+			DestructiveHint: false,
 		},
 	}, func(args map[string]interface{}) (*mcp.CallToolResult, error) {
 		logging.ToolCall("jira_get_project_versions", args, 0, false)
@@ -942,36 +1006,48 @@ func (r *JiraRegistry) registerGetProjectVersions(server *mcp.Server) {
 
 // 16. jira_get_all_projects - Get all accessible projects
 func (r *JiraRegistry) registerGetAllProjects(server *mcp.Server) {
+	minStartAt := float64(0)
+	minResults := float64(1)
+	maxResults := float64(100)
+	minRecent := float64(1)
+	maxRecent := float64(20)
+
 	server.RegisterTool(mcp.Tool{
 		Name:        "jira_get_all_projects",
-		Description: "Get all Jira projects accessible to the current user.",
+		Description: "Get all projects accessible to the current user. Returns project keys, names, and types for use in other operations.",
 		InputSchema: mcp.JSONSchema{
 			Type: "object",
 			Properties: map[string]mcp.Property{
 				"expand": {
 					Type:        "array",
-					Description: "Fields to expand (e.g., 'description', 'lead', 'issueTypes').",
+					Description: "Fields to expand for additional data (e.g., 'description', 'lead', 'issueTypes', 'projectKeys').",
 					Items:       &mcp.Property{Type: "string"},
 				},
 				"recent": {
-					Type:        "number",
-					Description: "Return only recently accessed projects (number of projects).",
+					Type:        "integer",
+					Description: "Return only N most recently accessed projects (1-20). Omit to return all projects.",
+					Minimum:     &minRecent,
+					Maximum:     &maxRecent,
 				},
 				"start_at": {
-					Type:        "number",
-					Description: "Index of the first result to return.",
+					Type:        "integer",
+					Description: "0-based index of the first result to return for pagination.",
 					Default:     0,
+					Minimum:     &minStartAt,
 				},
 				"max_results": {
-					Type:        "number",
-					Description: "Maximum number of results to return (default: 50).",
+					Type:        "integer",
+					Description: "Maximum number of projects per page, 1-100. Default: 50.",
 					Default:     50,
+					Minimum:     &minResults,
+					Maximum:     &maxResults,
 				},
 			},
 		},
 		Annotations: &mcp.ToolAnnotation{
-			Title:        "Get All Projects",
-			ReadOnlyHint: true,
+			Title:           "Get All Projects",
+			ReadOnlyHint:    true,
+			DestructiveHint: false,
 		},
 	}, func(args map[string]interface{}) (*mcp.CallToolResult, error) {
 		logging.ToolCall("jira_get_all_projects", args, 0, false)
@@ -1011,56 +1087,57 @@ func (r *JiraRegistry) registerGetAllProjects(server *mcp.Server) {
 func (r *JiraRegistry) registerCreateIssue(server *mcp.Server) {
 	server.RegisterTool(mcp.Tool{
 		Name:        "jira_create_issue",
-		Description: "Create a new Jira issue with the specified fields.",
+		Description: "Create a new issue with the specified fields. Returns the created issue key and ID.",
 		InputSchema: mcp.JSONSchema{
 			Type: "object",
 			Properties: map[string]mcp.Property{
 				"project_key": {
 					Type:        "string",
-					Description: "The project key (e.g., 'PROJ').",
+					Description: "The project key (e.g., 'PROJ', 'MYPROJECT').",
 				},
 				"summary": {
 					Type:        "string",
-					Description: "Issue summary/title.",
+					Description: "Issue summary/title - brief description of the issue.",
 				},
 				"issue_type": {
 					Type:        "string",
-					Description: "Issue type name (e.g., 'Bug', 'Story', 'Task').",
+					Description: "Issue type name (e.g., 'Bug', 'Story', 'Task', 'Epic', 'Sub-task').",
 				},
 				"description": {
 					Type:        "string",
-					Description: "Issue description (supports Jira wiki markup or ADF for Cloud).",
+					Description: "Issue description with details. Supports Jira wiki markup (Server/DC) or ADF JSON (Cloud).",
 				},
 				"priority": {
 					Type:        "string",
-					Description: "Priority name (e.g., 'High', 'Medium', 'Low').",
+					Description: "Priority name for the issue.",
+					Enum:        []string{"Highest", "High", "Medium", "Low", "Lowest"},
 				},
 				"assignee": {
 					Type:        "string",
-					Description: "Assignee account ID.",
+					Description: "Assignee account ID. Use jira_get_user_profile to get current user's ID.",
 				},
 				"labels": {
 					Type:        "array",
-					Description: "Labels to apply to the issue.",
+					Description: "Labels to apply (e.g., ['bug', 'frontend', 'urgent']).",
 					Items:       &mcp.Property{Type: "string"},
 				},
 				"components": {
 					Type:        "array",
-					Description: "Component names to add.",
+					Description: "Component names to add (e.g., ['Backend', 'API']).",
 					Items:       &mcp.Property{Type: "string"},
 				},
 				"fix_versions": {
 					Type:        "array",
-					Description: "Fix version names.",
+					Description: "Fix version names (e.g., ['1.0', '2.0-beta']). Use jira_get_project_versions to list available versions.",
 					Items:       &mcp.Property{Type: "string"},
 				},
 				"custom_fields": {
 					Type:        "object",
-					Description: "Custom field values as key-value pairs (use field ID as key).",
+					Description: "Custom field values as key-value pairs. Use field ID as key (e.g., {'customfield_10001': 'value'}). Use jira_search_fields to find field IDs.",
 				},
 				"parent_key": {
 					Type:        "string",
-					Description: "Parent issue key for sub-tasks.",
+					Description: "Parent issue key for sub-tasks (e.g., 'PROJ-100').",
 				},
 			},
 			Required: []string{"project_key", "summary", "issue_type"},
@@ -1157,23 +1234,23 @@ func (r *JiraRegistry) registerCreateIssue(server *mcp.Server) {
 func (r *JiraRegistry) registerBatchCreateIssues(server *mcp.Server) {
 	server.RegisterTool(mcp.Tool{
 		Name:        "jira_batch_create_issues",
-		Description: "Create multiple Jira issues. Creates issues one by one and returns results for each.",
+		Description: "Create multiple issues in a single operation. Returns created issue keys and any errors for failed items.",
 		InputSchema: mcp.JSONSchema{
 			Type: "object",
 			Properties: map[string]mcp.Property{
 				"issues": {
 					Type:        "array",
-					Description: "Array of issue objects to create. Each object should have project_key, summary, issue_type, and optional fields.",
+					Description: "Array of issue objects. Each requires project_key, summary, issue_type. Optional: description, priority, assignee, labels.",
 					Items: &mcp.Property{
 						Type: "object",
 						Properties: map[string]mcp.Property{
-							"project_key": {Type: "string"},
-							"summary":     {Type: "string"},
-							"issue_type":  {Type: "string"},
-							"description": {Type: "string"},
-							"priority":    {Type: "string"},
-							"assignee":    {Type: "string"},
-							"labels":      {Type: "array", Items: &mcp.Property{Type: "string"}},
+							"project_key": {Type: "string", Description: "Project key (e.g., 'PROJ')"},
+							"summary":     {Type: "string", Description: "Issue summary/title"},
+							"issue_type":  {Type: "string", Description: "Issue type (e.g., 'Bug', 'Task')"},
+							"description": {Type: "string", Description: "Issue description"},
+							"priority":    {Type: "string", Description: "Priority (e.g., 'High', 'Medium', 'Low')", Enum: []string{"Highest", "High", "Medium", "Low", "Lowest"}},
+							"assignee":    {Type: "string", Description: "Assignee account ID"},
+							"labels":      {Type: "array", Items: &mcp.Property{Type: "string"}, Description: "Labels to apply"},
 						},
 					},
 				},
@@ -1280,7 +1357,7 @@ func (r *JiraRegistry) registerBatchCreateIssues(server *mcp.Server) {
 func (r *JiraRegistry) registerUpdateIssue(server *mcp.Server) {
 	server.RegisterTool(mcp.Tool{
 		Name:        "jira_update_issue",
-		Description: "Update an existing Jira issue's fields.",
+		Description: "Update an existing issue's fields. Only specified fields are modified; unspecified fields remain unchanged.",
 		InputSchema: mcp.JSONSchema{
 			Type: "object",
 			Properties: map[string]mcp.Property{
@@ -1294,38 +1371,39 @@ func (r *JiraRegistry) registerUpdateIssue(server *mcp.Server) {
 				},
 				"description": {
 					Type:        "string",
-					Description: "New description.",
+					Description: "New description. Supports Jira wiki markup (Server/DC) or ADF JSON (Cloud).",
 				},
 				"priority": {
 					Type:        "string",
 					Description: "New priority name.",
+					Enum:        []string{"Highest", "High", "Medium", "Low", "Lowest"},
 				},
 				"assignee": {
 					Type:        "string",
-					Description: "New assignee account ID (use '-1' to unassign).",
+					Description: "New assignee account ID. Use '-1' or empty string to unassign.",
 				},
 				"labels": {
 					Type:        "array",
-					Description: "New labels (replaces existing).",
+					Description: "New labels - replaces all existing labels (e.g., ['bug', 'critical']).",
 					Items:       &mcp.Property{Type: "string"},
 				},
 				"components": {
 					Type:        "array",
-					Description: "New component names (replaces existing).",
+					Description: "New component names - replaces all existing components.",
 					Items:       &mcp.Property{Type: "string"},
 				},
 				"fix_versions": {
 					Type:        "array",
-					Description: "New fix version names (replaces existing).",
+					Description: "New fix version names - replaces all existing versions.",
 					Items:       &mcp.Property{Type: "string"},
 				},
 				"custom_fields": {
 					Type:        "object",
-					Description: "Custom field values to update.",
+					Description: "Custom field values to update. Use field ID as key (e.g., {'customfield_10001': 'value'}).",
 				},
 				"notify_users": {
 					Type:        "boolean",
-					Description: "Send notifications to watchers (default: true).",
+					Description: "Send notifications to watchers. Default: true.",
 					Default:     true,
 				},
 			},
@@ -1418,17 +1496,17 @@ func (r *JiraRegistry) registerUpdateIssue(server *mcp.Server) {
 func (r *JiraRegistry) registerDeleteIssue(server *mcp.Server) {
 	server.RegisterTool(mcp.Tool{
 		Name:        "jira_delete_issue",
-		Description: "Delete a Jira issue. This action cannot be undone.",
+		Description: "Permanently delete an issue. WARNING: This action cannot be undone. Consider closing or archiving issues instead.",
 		InputSchema: mcp.JSONSchema{
 			Type: "object",
 			Properties: map[string]mcp.Property{
 				"issue_key": {
 					Type:        "string",
-					Description: "The issue key (e.g., 'PROJ-123').",
+					Description: "The issue key to delete (e.g., 'PROJ-123').",
 				},
 				"delete_subtasks": {
 					Type:        "boolean",
-					Description: "Also delete sub-tasks (default: false).",
+					Description: "Also delete all sub-tasks. If false and sub-tasks exist, deletion will fail. Default: false.",
 					Default:     false,
 				},
 			},
@@ -1469,7 +1547,7 @@ func (r *JiraRegistry) registerDeleteIssue(server *mcp.Server) {
 func (r *JiraRegistry) registerAddComment(server *mcp.Server) {
 	server.RegisterTool(mcp.Tool{
 		Name:        "jira_add_comment",
-		Description: "Add a comment to a Jira issue.",
+		Description: "Add a comment to an issue. Returns the created comment with ID for future edits.",
 		InputSchema: mcp.JSONSchema{
 			Type: "object",
 			Properties: map[string]mcp.Property{
@@ -1479,11 +1557,11 @@ func (r *JiraRegistry) registerAddComment(server *mcp.Server) {
 				},
 				"body": {
 					Type:        "string",
-					Description: "Comment body text (supports Jira wiki markup or ADF for Cloud).",
+					Description: "Comment body text. Supports Jira wiki markup (Server/DC) or ADF JSON (Cloud). Use @accountId for mentions.",
 				},
 				"visibility": {
 					Type:        "object",
-					Description: "Visibility restrictions (e.g., {\"type\": \"role\", \"value\": \"Developers\"}).",
+					Description: "Restrict visibility to specific role or group (e.g., {\"type\": \"role\", \"value\": \"Developers\"} or {\"type\": \"group\", \"value\": \"jira-users\"}).",
 				},
 			},
 			Required: []string{"issue_key", "body"},
@@ -1524,7 +1602,7 @@ func (r *JiraRegistry) registerAddComment(server *mcp.Server) {
 func (r *JiraRegistry) registerEditComment(server *mcp.Server) {
 	server.RegisterTool(mcp.Tool{
 		Name:        "jira_edit_comment",
-		Description: "Edit an existing comment on a Jira issue.",
+		Description: "Edit an existing comment on an issue. Only the comment author or admin can edit comments.",
 		InputSchema: mcp.JSONSchema{
 			Type: "object",
 			Properties: map[string]mcp.Property{
@@ -1534,11 +1612,11 @@ func (r *JiraRegistry) registerEditComment(server *mcp.Server) {
 				},
 				"comment_id": {
 					Type:        "string",
-					Description: "The comment ID to edit.",
+					Description: "The comment ID to edit (returned when comment was created or from issue details).",
 				},
 				"body": {
 					Type:        "string",
-					Description: "New comment body text.",
+					Description: "New comment body text. Supports Jira wiki markup (Server/DC) or ADF JSON (Cloud).",
 				},
 			},
 			Required: []string{"issue_key", "comment_id", "body"},
@@ -1580,7 +1658,7 @@ func (r *JiraRegistry) registerEditComment(server *mcp.Server) {
 func (r *JiraRegistry) registerAddWorklog(server *mcp.Server) {
 	server.RegisterTool(mcp.Tool{
 		Name:        "jira_add_worklog",
-		Description: "Add a worklog entry to track time spent on a Jira issue.",
+		Description: "Add a worklog entry to track time spent on an issue. Updates the issue's time tracking fields.",
 		InputSchema: mcp.JSONSchema{
 			Type: "object",
 			Properties: map[string]mcp.Property{
@@ -1590,15 +1668,15 @@ func (r *JiraRegistry) registerAddWorklog(server *mcp.Server) {
 				},
 				"time_spent": {
 					Type:        "string",
-					Description: "Time spent in Jira format (e.g., '1h 30m', '2d', '3h').",
+					Description: "Time spent in Jira duration format (e.g., '1h 30m', '2d', '3h', '45m', '1w 2d').",
 				},
 				"comment": {
 					Type:        "string",
-					Description: "Work description.",
+					Description: "Description of work performed.",
 				},
 				"started": {
 					Type:        "string",
-					Description: "When the work started (ISO 8601 format). Defaults to now.",
+					Description: "When the work started in ISO 8601 format (e.g., '2024-01-15T09:00:00.000+0000'). Defaults to current time.",
 				},
 			},
 			Required: []string{"issue_key", "time_spent"},
@@ -1650,7 +1728,7 @@ func (r *JiraRegistry) registerAddWorklog(server *mcp.Server) {
 func (r *JiraRegistry) registerLinkToEpic(server *mcp.Server) {
 	server.RegisterTool(mcp.Tool{
 		Name:        "jira_link_to_epic",
-		Description: "Link an issue to an Epic (add issue to Epic's scope). Uses the epic link custom field.",
+		Description: "Link an issue to an Epic, adding it to the Epic's scope. For next-gen projects, use parent_key in jira_update_issue instead.",
 		InputSchema: mcp.JSONSchema{
 			Type: "object",
 			Properties: map[string]mcp.Property{
@@ -1664,7 +1742,7 @@ func (r *JiraRegistry) registerLinkToEpic(server *mcp.Server) {
 				},
 				"epic_link_field": {
 					Type:        "string",
-					Description: "The custom field ID for epic link (default: 'customfield_10014'). Use jira_search_fields to find the correct field.",
+					Description: "Custom field ID for epic link. Default: 'customfield_10014'. Use jira_search_fields with keyword 'epic' to find the correct field ID for your instance.",
 					Default:     "customfield_10014",
 				},
 			},
@@ -1713,21 +1791,21 @@ func (r *JiraRegistry) registerLinkToEpic(server *mcp.Server) {
 func (r *JiraRegistry) registerCreateIssueLink(server *mcp.Server) {
 	server.RegisterTool(mcp.Tool{
 		Name:        "jira_create_issue_link",
-		Description: "Create a link between two Jira issues (e.g., 'blocks', 'is blocked by', 'relates to').",
+		Description: "Create a link between two issues showing relationships like blocks, duplicates, or relates to. Use jira_get_link_types to see available link types.",
 		InputSchema: mcp.JSONSchema{
 			Type: "object",
 			Properties: map[string]mcp.Property{
 				"link_type": {
 					Type:        "string",
-					Description: "Link type name (e.g., 'Blocks', 'Relates', 'Clones'). Use jira_get_link_types to see available types.",
+					Description: "Link type name from jira_get_link_types (e.g., 'Blocks', 'Cloners', 'Duplicate', 'Relates').",
 				},
 				"inward_issue": {
 					Type:        "string",
-					Description: "The inward issue key (e.g., 'PROJ-123 is blocked by PROJ-456').",
+					Description: "The inward issue key - receives the relationship (e.g., in 'PROJ-123 is blocked by PROJ-456', PROJ-123 is inward).",
 				},
 				"outward_issue": {
 					Type:        "string",
-					Description: "The outward issue key (e.g., 'PROJ-456 blocks PROJ-123').",
+					Description: "The outward issue key - causes the relationship (e.g., in 'PROJ-456 blocks PROJ-123', PROJ-456 is outward).",
 				},
 			},
 			Required: []string{"link_type", "inward_issue", "outward_issue"},
@@ -1767,7 +1845,7 @@ func (r *JiraRegistry) registerCreateIssueLink(server *mcp.Server) {
 func (r *JiraRegistry) registerTransitionIssue(server *mcp.Server) {
 	server.RegisterTool(mcp.Tool{
 		Name:        "jira_transition_issue",
-		Description: "Transition a Jira issue to a new status. Use jira_get_transitions to see available transitions.",
+		Description: "Transition an issue to a new status. First use jira_get_transitions to get available transition IDs for the issue's current state.",
 		InputSchema: mcp.JSONSchema{
 			Type: "object",
 			Properties: map[string]mcp.Property{
@@ -1777,19 +1855,19 @@ func (r *JiraRegistry) registerTransitionIssue(server *mcp.Server) {
 				},
 				"transition_id": {
 					Type:        "string",
-					Description: "The transition ID to execute.",
+					Description: "The transition ID from jira_get_transitions (e.g., '21', '31').",
 				},
 				"comment": {
 					Type:        "string",
-					Description: "Optional comment to add during transition.",
+					Description: "Comment to add during transition (optional).",
 				},
 				"resolution": {
 					Type:        "string",
-					Description: "Resolution name if required (e.g., 'Done', 'Won't Do').",
+					Description: "Resolution name if transitioning to a resolved status (e.g., 'Done', 'Won't Do', 'Duplicate', 'Cannot Reproduce').",
 				},
 				"fields": {
 					Type:        "object",
-					Description: "Additional fields to set during transition.",
+					Description: "Additional fields required by the transition screen (e.g., {'customfield_10001': 'value'}).",
 				},
 			},
 			Required: []string{"issue_key", "transition_id"},
