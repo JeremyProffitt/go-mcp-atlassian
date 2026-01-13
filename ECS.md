@@ -1,6 +1,15 @@
 # ECS Deployment Guide for go-mcp-atlassian
 
-This guide covers deploying go-mcp-atlassian as an HTTP service on AWS ECS (Elastic Container Service) using either Fargate or EC2 launch types.
+Deploy go-mcp-atlassian as an HTTP service on AWS ECS (Elastic Container Service) using Fargate or EC2 launch types.
+
+## Quick Reference
+
+| Item | Value |
+|------|-------|
+| Default Port | 3000 |
+| Health Endpoint | `/health` |
+| Auth Header | `X-MCP-Auth-Token` |
+| Log Location | CloudWatch `/ecs/go-mcp-atlassian` |
 
 ## Architecture Overview
 
@@ -23,31 +32,41 @@ This guide covers deploying go-mcp-atlassian as an HTTP service on AWS ECS (Elas
 
 ## Prerequisites
 
-1. AWS CLI configured with appropriate permissions
-2. Docker installed locally for building images
-3. An ECR repository created for the image
-4. VPC with subnets configured for ECS
-5. Atlassian credentials (Jira and/or Confluence)
+| Requirement | Description |
+|-------------|-------------|
+| AWS CLI | Configured with appropriate IAM permissions |
+| Docker | Installed locally for building images |
+| ECR Repository | Created for storing the Docker image |
+| VPC | Subnets configured for ECS deployment |
+| Credentials | Atlassian API tokens (Jira and/or Confluence) |
 
-## Quick Start
+## Deployment Steps
 
-### 1. Build and Push Docker Image
+### Step 1: Build and Push Docker Image
 
 ```bash
+# Set variables
+export AWS_REGION="us-east-1"
+export AWS_ACCOUNT_ID="123456789012"
+export ECR_REPO="go-mcp-atlassian"
+
 # Authenticate to ECR
-aws ecr get-login-password --region YOUR_REGION | docker login --username AWS --password-stdin YOUR_ACCOUNT_ID.dkr.ecr.YOUR_REGION.amazonaws.com
+aws ecr get-login-password --region $AWS_REGION | \
+  docker login --username AWS --password-stdin \
+  $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com
 
 # Build the image
 docker build -t go-mcp-atlassian .
 
 # Tag for ECR
-docker tag go-mcp-atlassian:latest YOUR_ACCOUNT_ID.dkr.ecr.YOUR_REGION.amazonaws.com/go-mcp-atlassian:latest
+docker tag go-mcp-atlassian:latest \
+  $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPO:latest
 
 # Push to ECR
-docker push YOUR_ACCOUNT_ID.dkr.ecr.YOUR_REGION.amazonaws.com/go-mcp-atlassian:latest
+docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPO:latest
 ```
 
-### 2. Create Secrets in AWS Secrets Manager
+### Step 2: Create Secrets in AWS Secrets Manager
 
 ```bash
 aws secretsmanager create-secret \
@@ -63,11 +82,9 @@ aws secretsmanager create-secret \
     }'
 ```
 
-### 3. Create IAM Roles
+### Step 3: Create IAM Task Execution Role
 
-#### Task Execution Role
-
-This role allows ECS to pull images and retrieve secrets:
+Create a role with this policy to allow ECS to pull images and retrieve secrets:
 
 ```json
 {
@@ -102,7 +119,7 @@ This role allows ECS to pull images and retrieve secrets:
 }
 ```
 
-### 4. Create ECS Resources
+### Step 4: Create ECS Resources
 
 ```bash
 # Create CloudWatch Log Group
@@ -124,67 +141,84 @@ aws ecs create-service \
     --network-configuration "awsvpcConfiguration={subnets=[subnet-xxx],securityGroups=[sg-xxx],assignPublicIp=ENABLED}"
 ```
 
-## Configuration
+## Environment Variables Reference
 
-### Environment Variables
+### Required Variables (at least one product)
 
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `JIRA_URL` | Yes* | Jira instance URL |
-| `JIRA_USERNAME` | Yes* | Jira username (for Cloud) |
-| `JIRA_API_TOKEN` | Yes* | Jira API token (for Cloud) |
-| `JIRA_PERSONAL_TOKEN` | Yes* | Jira PAT (for Server/DC) |
-| `CONFLUENCE_URL` | Yes* | Confluence instance URL |
-| `CONFLUENCE_USERNAME` | Yes* | Confluence username (for Cloud) |
-| `CONFLUENCE_API_TOKEN` | Yes* | Confluence API token (for Cloud) |
-| `CONFLUENCE_PERSONAL_TOKEN` | Yes* | Confluence PAT (for Server/DC) |
-| `MCP_AUTH_TOKEN` | No | Token for HTTP authentication |
-| `MCP_LOG_LEVEL` | No | Log level (default: info) |
-| `READ_ONLY_MODE` | No | Enable read-only mode |
+| Variable | Cloud | Server/DC | Description |
+|----------|-------|-----------|-------------|
+| `JIRA_URL` | Yes | Yes | Jira instance URL (e.g., `https://company.atlassian.net`) |
+| `JIRA_USERNAME` | Yes | No | Email address for Cloud authentication |
+| `JIRA_API_TOKEN` | Yes | No | API token for Cloud authentication |
+| `JIRA_PERSONAL_TOKEN` | No | Yes | Personal Access Token for Server/DC |
+| `CONFLUENCE_URL` | Yes | Yes | Confluence instance URL |
+| `CONFLUENCE_USERNAME` | Yes | No | Email address for Cloud authentication |
+| `CONFLUENCE_API_TOKEN` | Yes | No | API token for Cloud authentication |
+| `CONFLUENCE_PERSONAL_TOKEN` | No | Yes | Personal Access Token for Server/DC |
 
-*At least one of Jira or Confluence credentials required.
+### Optional Variables
 
-### Authentication
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MCP_AUTH_TOKEN` | None | HTTP authentication token (recommended for production) |
+| `MCP_LOG_LEVEL` | `info` | Log level: `off`, `error`, `warn`, `info`, `debug` |
+| `READ_ONLY_MODE` | `false` | Disable all write operations |
+| `JIRA_SSL_VERIFY` | `true` | Verify SSL certificates for Jira |
+| `CONFLUENCE_SSL_VERIFY` | `true` | Verify SSL certificates for Confluence |
 
-When `MCP_AUTH_TOKEN` is set, all HTTP requests to the MCP server must include the `X-MCP-Auth-Token` header with the matching token value.
+## HTTP Authentication
+
+When `MCP_AUTH_TOKEN` is set, all requests must include the authentication header:
 
 ```bash
-# Example request with authentication
+# Example authenticated request
 curl -X POST http://your-alb-url:3000/ \
     -H "Content-Type: application/json" \
     -H "X-MCP-Auth-Token: your-secure-auth-token" \
     -d '{"jsonrpc":"2.0","method":"tools/list","id":1}'
 ```
 
-## Security Considerations
+## Security Checklist
 
-1. **Use HTTPS**: Place an ALB with HTTPS termination in front of the ECS service
-2. **Private Subnets**: Deploy ECS tasks in private subnets with NAT Gateway
-3. **Security Groups**: Restrict inbound traffic to only the ALB security group
-4. **Secrets Management**: Always use AWS Secrets Manager for credentials
-5. **Authentication**: Enable `MCP_AUTH_TOKEN` for production deployments
-6. **Read-Only Mode**: Consider enabling `READ_ONLY_MODE=true` for safety
+| Requirement | Implementation |
+|-------------|----------------|
+| HTTPS | Use ALB with HTTPS termination |
+| Private Subnets | Deploy ECS tasks in private subnets with NAT Gateway |
+| Security Groups | Restrict inbound traffic to ALB security group only |
+| Secrets | Use AWS Secrets Manager (never hardcode credentials) |
+| Authentication | Enable `MCP_AUTH_TOKEN` in production |
+| Read-Only Mode | Consider `READ_ONLY_MODE=true` for safety |
 
 ## Monitoring
 
 ### CloudWatch Logs
 
-Logs are automatically sent to CloudWatch Logs at `/ecs/go-mcp-atlassian`.
+Logs are automatically sent to CloudWatch at `/ecs/go-mcp-atlassian`.
 
-### Health Checks
+### Health Check
 
-The service exposes a `/health` endpoint that returns:
+The service exposes a health endpoint:
+
+```bash
+curl http://your-alb-url:3000/health
+```
+
+Response:
 ```json
 {"status": "healthy", "server": "go-mcp-atlassian"}
 ```
 
 ## Troubleshooting
 
-### Common Issues
+| Issue | Cause | Solution |
+|-------|-------|----------|
+| Task fails to start | Configuration error | Check CloudWatch logs for startup errors |
+| Health check failures | Network/Security | Verify security group allows inbound on port 3000 |
+| Secrets not loading | IAM permissions | Verify task execution role has Secrets Manager access |
+| Connection to Atlassian fails | Network | Check VPC has outbound internet access (NAT Gateway) |
+| 401 Unauthorized | Auth token mismatch | Verify `X-MCP-Auth-Token` header matches `MCP_AUTH_TOKEN` |
 
-1. **Task fails to start**: Check CloudWatch logs for startup errors
-2. **Health check failures**: Ensure security group allows inbound on port 3000
-3. **Secrets not loading**: Verify task execution role has Secrets Manager permissions
-4. **Connection to Atlassian fails**: Check VPC has outbound internet access
+## Related Documentation
 
-See [INTEGRATION.md](./INTEGRATION.md) for configuring Claude Code and Continue.dev to connect to this service.
+- [INTEGRATION.md](./INTEGRATION.md) - Configure Claude Code and Continue.dev clients
+- [README.md](./README.md) - Full tool reference and configuration options
