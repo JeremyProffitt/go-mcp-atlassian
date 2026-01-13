@@ -13,7 +13,18 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nicholasgriffintn/go-mcp-atlassian/pkg/auth"
 	"github.com/nicholasgriffintn/go-mcp-atlassian/pkg/logging"
+)
+
+// ClientType identifies the type of Atlassian client.
+type ClientType int
+
+const (
+	// ClientTypeJira indicates a Jira client.
+	ClientTypeJira ClientType = iota
+	// ClientTypeConfluence indicates a Confluence client.
+	ClientTypeConfluence
 )
 
 // Client is the base HTTP client for Atlassian APIs.
@@ -22,6 +33,7 @@ type Client struct {
 	baseURL    string
 	authHeader string
 	authType   AuthType
+	clientType ClientType
 	logger     *logging.Logger
 	isCloud    bool
 	secrets    []string // Secrets to redact from logs (tokens, API keys, etc.)
@@ -41,6 +53,13 @@ func WithLogger(logger *logging.Logger) ClientOption {
 func WithHTTPClient(httpClient *http.Client) ClientOption {
 	return func(c *Client) {
 		c.httpClient = httpClient
+	}
+}
+
+// WithClientType sets the client type (Jira or Confluence).
+func WithClientType(clientType ClientType) ClientOption {
+	return func(c *Client) {
+		c.clientType = clientType
 	}
 }
 
@@ -112,6 +131,26 @@ func (c *Client) IsCloud() bool {
 	return c.isCloud
 }
 
+// getAuthHeader returns the authentication header, checking for context-based token overrides.
+// If a token is provided in the request context, it takes precedence over the configured token.
+func (c *Client) getAuthHeader(ctx context.Context) string {
+	// Check for context-based token override based on client type
+	var contextToken string
+	if c.clientType == ClientTypeJira {
+		contextToken = auth.GetJiraPersonalToken(ctx)
+	} else if c.clientType == ClientTypeConfluence {
+		contextToken = auth.GetConfluencePersonalToken(ctx)
+	}
+
+	// If context token is available, use it (Bearer auth for personal tokens)
+	if contextToken != "" {
+		return "Bearer " + contextToken
+	}
+
+	// Fall back to configured auth header
+	return c.authHeader
+}
+
 // doRequest performs an HTTP request and returns the response.
 func (c *Client) doRequest(ctx context.Context, method, path string, body interface{}, result interface{}) error {
 	startTime := time.Now()
@@ -138,7 +177,7 @@ func (c *Client) doRequest(ctx context.Context, method, path string, body interf
 	}
 
 	// Set headers
-	req.Header.Set("Authorization", c.authHeader)
+	req.Header.Set("Authorization", c.getAuthHeader(ctx))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 
@@ -263,7 +302,7 @@ func (c *Client) DoRaw(ctx context.Context, method, path string, body io.Reader,
 	}
 
 	// Set headers
-	req.Header.Set("Authorization", c.authHeader)
+	req.Header.Set("Authorization", c.getAuthHeader(ctx))
 	if contentType != "" {
 		req.Header.Set("Content-Type", contentType)
 	}
@@ -342,7 +381,7 @@ func (c *Client) UploadFile(ctx context.Context, path string, filename string, c
 	}
 
 	// Set headers
-	req.Header.Set("Authorization", c.authHeader)
+	req.Header.Set("Authorization", c.getAuthHeader(ctx))
 	req.Header.Set("Content-Type", contentType)
 	req.Header.Set("X-Atlassian-Token", "no-check") // Required for file uploads
 

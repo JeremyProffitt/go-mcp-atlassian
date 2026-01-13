@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -16,12 +17,17 @@ import (
 // ToolHandler is a function that handles a tool call
 type ToolHandler func(arguments map[string]interface{}) (*CallToolResult, error)
 
+// ToolHandlerWithContext is a function that handles a tool call with request context.
+// Use this for handlers that need access to per-request credentials from HTTP headers.
+type ToolHandlerWithContext func(ctx context.Context, arguments map[string]interface{}) (*CallToolResult, error)
+
 // Server represents an MCP server
 type Server struct {
 	name     string
 	version  string
 	tools    []Tool
 	handlers map[string]ToolHandler
+	ctxHandlers map[string]ToolHandlerWithContext
 	mu       sync.RWMutex
 	stdin    io.Reader
 	stdout   io.Writer
@@ -34,6 +40,12 @@ type Server struct {
 	// Callbacks
 	onToolCall func(name string, args map[string]interface{}, duration time.Duration, success bool)
 	onError    func(err error, context string)
+
+	// Authentication
+	authorizer auth.Authorizer
+
+	// Request context for HTTP mode (stores current request context for tool calls)
+	requestCtx context.Context
 }
 
 // NewServer creates a new MCP server
@@ -43,6 +55,7 @@ func NewServer(name, version string) *Server {
 		version:            version,
 		tools:              make([]Tool, 0),
 		handlers:           make(map[string]ToolHandler),
+		ctxHandlers:        make(map[string]ToolHandlerWithContext),
 		stdin:              os.Stdin,
 		stdout:             os.Stdout,
 		stderr:             os.Stderr,
@@ -60,12 +73,35 @@ func (s *Server) SetErrorCallback(cb func(err error, context string)) {
 	s.onError = cb
 }
 
+// SetAuthorizer sets the authorizer for HTTP mode authentication.
+func (s *Server) SetAuthorizer(authorizer auth.Authorizer) {
+	s.authorizer = authorizer
+}
+
 // RegisterTool registers a tool with its handler
 func (s *Server) RegisterTool(tool Tool, handler ToolHandler) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.tools = append(s.tools, tool)
 	s.handlers[tool.Name] = handler
+}
+
+// RegisterToolWithContext registers a tool with a context-aware handler.
+// Use this for tools that need access to per-request credentials from HTTP headers.
+func (s *Server) RegisterToolWithContext(tool Tool, handler ToolHandlerWithContext) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.tools = append(s.tools, tool)
+	s.ctxHandlers[tool.Name] = handler
+}
+
+// GetRequestContext returns the current request context for HTTP mode.
+// In stdio mode, returns context.Background().
+func (s *Server) GetRequestContext() context.Context {
+	if s.requestCtx != nil {
+		return s.requestCtx
+	}
+	return context.Background()
 }
 
 // checkRateLimit returns true if the request should be rate limited
@@ -162,8 +198,8 @@ func (s *Server) RunHTTP(addr string) error {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		json.NewEncoder(w).Encode(map[string]interface{}{
-			"status": "healthy",
-			"server": s.name,
+			"status":  "ok",
+			"version": s.version,
 		})
 	})
 
@@ -174,8 +210,22 @@ func (s *Server) RunHTTP(addr string) error {
 			return
 		}
 
-		// Check authentication if enabled
-		if auth.IsAuthEnabled() {
+		// Check authentication using authorizer if set
+		if s.authorizer != nil {
+			token := r.Header.Get("Authorization")
+			authorized, err := s.authorizer.Authorize(r.Context(), token)
+			if err != nil || !authorized {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusUnauthorized)
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"jsonrpc": "2.0",
+					"id":      nil,
+					"error":   map[string]interface{}{"code": -32001, "message": "Unauthorized: invalid or missing authentication token"},
+				})
+				return
+			}
+		} else if auth.IsAuthEnabled() {
+			// Fallback to legacy auth check for backward compatibility
 			token := r.Header.Get(auth.AuthHeaderName)
 			if !auth.ValidateAgainstExpected(token) {
 				w.Header().Set("Content-Type", "application/json")
@@ -201,6 +251,19 @@ func (s *Server) RunHTTP(addr string) error {
 			return
 		}
 
+		// Inject credentials from headers into context
+		ctx := r.Context()
+		if token := r.Header.Get(auth.JiraPersonalTokenHeader); token != "" {
+			ctx = context.WithValue(ctx, auth.JiraPersonalTokenKey, token)
+		}
+		if token := r.Header.Get(auth.ConfluencePersonalTokenHeader); token != "" {
+			ctx = context.WithValue(ctx, auth.ConfluencePersonalTokenKey, token)
+		}
+
+		// Store context for tool handlers
+		s.requestCtx = ctx
+		defer func() { s.requestCtx = nil }()
+
 		response := s.handleMessage(body)
 		if response != nil {
 			w.Header().Set("Content-Type", "application/json")
@@ -208,7 +271,8 @@ func (s *Server) RunHTTP(addr string) error {
 		}
 	})
 
-	if auth.IsAuthEnabled() {
+	authEnabled := s.authorizer != nil || auth.IsAuthEnabled()
+	if authEnabled {
 		fmt.Fprintf(s.stderr, "Atlassian MCP Server running on HTTP at %s (authentication enabled)\n", addr)
 	} else {
 		fmt.Fprintf(s.stderr, "Atlassian MCP Server running on HTTP at %s (authentication disabled)\n", addr)
@@ -337,10 +401,11 @@ func (s *Server) handleCallTool(params interface{}) (*CallToolResult, error) {
 	}
 
 	s.mu.RLock()
-	handler, exists := s.handlers[name]
+	handler, handlerExists := s.handlers[name]
+	ctxHandler, ctxHandlerExists := s.ctxHandlers[name]
 	s.mu.RUnlock()
 
-	if !exists {
+	if !handlerExists && !ctxHandlerExists {
 		return &CallToolResult{
 			Content: []ContentItem{{Type: "text", Text: fmt.Sprintf("Unknown tool: %s", name)}},
 			IsError: true,
@@ -348,7 +413,15 @@ func (s *Server) handleCallTool(params interface{}) (*CallToolResult, error) {
 	}
 
 	startTime := time.Now()
-	result, err := handler(arguments)
+	var result *CallToolResult
+	var err error
+
+	// Use context-aware handler if available, otherwise use legacy handler
+	if ctxHandlerExists {
+		result, err = ctxHandler(s.GetRequestContext(), arguments)
+	} else {
+		result, err = handler(arguments)
+	}
 	duration := time.Since(startTime)
 
 	success := err == nil && (result == nil || !result.IsError)

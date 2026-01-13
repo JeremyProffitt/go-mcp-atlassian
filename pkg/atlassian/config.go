@@ -1,9 +1,12 @@
 package atlassian
 
 import (
+	"context"
 	"os"
 	"strconv"
 	"strings"
+
+	"github.com/nicholasgriffintn/go-mcp-atlassian/pkg/auth"
 )
 
 // AuthType represents the type of authentication to use.
@@ -241,4 +244,22 @@ func (c *ConfluenceConfig) IsSpaceAllowed(spaceKey string) bool {
 		}
 	}
 	return false
+}
+
+// GetJiraPersonalToken returns the Jira personal token from context if available,
+// otherwise falls back to the configured token.
+func (c *JiraConfig) GetJiraPersonalToken(ctx context.Context) string {
+	if token := auth.GetJiraPersonalToken(ctx); token != "" {
+		return token
+	}
+	return c.PersonalToken
+}
+
+// GetConfluencePersonalToken returns the Confluence personal token from context if available,
+// otherwise falls back to the configured token.
+func (c *ConfluenceConfig) GetConfluencePersonalToken(ctx context.Context) string {
+	if token := auth.GetConfluencePersonalToken(ctx); token != "" {
+		return token
+	}
+	return c.PersonalToken
 }

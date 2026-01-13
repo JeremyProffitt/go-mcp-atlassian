@@ -57,6 +57,8 @@ type Client struct {
 
 // NewClient creates a new Jira API client.
 func NewClient(config *atlassian.JiraConfig, opts ...atlassian.ClientOption) (*Client, error) {
+	// Add client type option for Jira
+	opts = append(opts, atlassian.WithClientType(atlassian.ClientTypeJira))
 	baseClient, err := atlassian.NewClient(&config.Config, opts...)
 	if err != nil {
 		return nil, err

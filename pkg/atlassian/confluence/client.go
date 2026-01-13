@@ -41,6 +41,8 @@ type Client struct {
 
 // NewClient creates a new Confluence API client.
 func NewClient(config *atlassian.ConfluenceConfig, opts ...atlassian.ClientOption) (*Client, error) {
+	// Add client type option for Confluence
+	opts = append(opts, atlassian.WithClientType(atlassian.ClientTypeConfluence))
 	baseClient, err := atlassian.NewClient(&config.Config, opts...)
 	if err != nil {
 		return nil, err

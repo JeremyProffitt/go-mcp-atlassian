@@ -538,6 +538,35 @@ Options:
   --help              Show help
 ```
 
+### Running Modes
+
+**Stdio Mode (Default)** - For local MCP clients:
+```bash
+./go-mcp-atlassian
+```
+
+**HTTP Mode** - For containers, Lambda, or remote access:
+```bash
+./go-mcp-atlassian --http --host 0.0.0.0 --port 3000
+```
+
+### HTTP Mode Details
+
+When running in HTTP mode, the server exposes:
+- `POST /` - MCP JSON-RPC endpoint
+- `GET /health` - Health check endpoint (returns `{"status":"ok","version":"X.X.X"}`)
+
+**Authentication**: HTTP mode requires an `Authorization` header on all requests (except `/health`). The authorization layer is pluggable; by default it accepts any token.
+
+**Per-Request Credentials**: In HTTP mode, Atlassian tokens can be passed via headers instead of environment variables, enabling multi-user scenarios:
+
+| Header | Description |
+|--------|-------------|
+| `X-Jira-Personal-Token` | Jira personal access token for Server/DC |
+| `X-Confluence-Personal-Token` | Confluence personal access token for Server/DC |
+
+These headers override the corresponding environment variables when present.
+
 ## Building from Source
 
 ### Prerequisites
